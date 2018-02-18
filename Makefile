@@ -41,10 +41,17 @@ C150LIB = $(COMP117)/files/c150Utils/
 C150AR = $(C150LIB)c150ids.a
 
 LDFLAGS = 
-INCLUDES = $(C150LIB)c150dgmsocket.h $(C150LIB)c150nastydgmsocket.h $(C150LIB)c150network.h $(C150LIB)c150exceptions.h $(C150LIB)c150debug.h $(C150LIB)c150utility.h
+C150INCLUDES = $(C150LIB)c150dgmsocket.h $(C150LIB)c150nastydgmsocket.h $(C150LIB)c150network.h $(C150LIB)c150exceptions.h $(C150LIB)c150debug.h $(C150LIB)c150utility.h
+FILEINCLUDES = fileutils.h
+INCLUDES = $(C150INCLUDES) $(FILEINCLUDES)
 
-all: nastyfiletest makedatafile sha1test
+all: nastyfiletest makedatafile sha1test fileserver fileclient
 
+fileserver: fileserver.o $(C150AR) $(INCLUDES)
+	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp $(C150AR)
+
+fileclient: fileclient.o $(C150AR) $(INCLUDES)
+	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp $(C150AR)
 
 #
 # Build the nastyfiletest sample
@@ -76,6 +83,6 @@ makedatafile: makedatafile.cpp
 # for forcing complete rebuild#
 
 clean:
-	 rm -f nastyfiletest sha1test makedatafile *.o 
+	 rm -f nastyfiletest sha1test makedatafile fileserver fileclient *.o 
 
 

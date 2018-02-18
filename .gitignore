@@ -40,3 +40,6 @@ core.*
 # File samples
 SRC/
 TARGET/
+
+# gradelogs
+GRADELOG*.txt

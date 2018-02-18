@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+# Mac
+.DS_Store
+
+# Segfaults
+core.*
+
+# File samples
+SRC/
+TARGET/

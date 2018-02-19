@@ -16,7 +16,7 @@
 
 #include <iostream>
 
-#include "c150dgmsocket.h"
+#include "c150nastydgmsocket.h"
 #include "c150nastyfile.h"
 #include "c150grading.h"
 #include "c150debug.h"
@@ -28,6 +28,7 @@ using namespace C150NETWORK; // for all comp150 utils
 
 
 // constants
+const int TIMEOUT_DURATION = 1000; // 1 second
 
 
 // fwd declarations
@@ -72,6 +73,31 @@ int main(int argc, char *argv[]) {
 
     // debugging
     initDebugLog("fileclientdebug.txt", argv[0]);
+
+    // create socket
+    try {
+        c150debug->printf(
+            C150APPLICATION,
+            "Creating C150NastyDgmSocket(nastiness=%d)",
+            netNastiness
+        );
+        C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
+
+        sock -> setServerName(argv[serverArg]);
+        sock -> turnOnTimeouts(TIMEOUT_DURATION);
+
+        c150debug->printf(C150APPLICATION, "Ready to send messages");
+    } catch (C150NetworkException e) {
+        // write to debug log
+        c150debug->printf(
+            C150ALWAYSLOG,
+            "Caught C150NetworkException: %s\n",
+            e.formattedExplanation().c_str()
+        );
+        // in case logging to file, write to console too
+        cerr << argv[0] << ": C150NetworkException: "
+             << e.formattedExplanation() << endl;
+    }
 
     return 0;
 }

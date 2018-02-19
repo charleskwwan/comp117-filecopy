@@ -8,6 +8,7 @@
 #define _FILEUTILS_H_
 
 
+#include <fstream>
 #include <algorithm> // std::max
 
 #include "c150dgmsocket.h"

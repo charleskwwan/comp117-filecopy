@@ -12,7 +12,7 @@
 
 #include <iostream>
 
-#include "c150dgmsocket.h"
+#include "c150nastydgmsocket.h"
 #include "c150nastyfile.h"
 #include "c150grading.h"
 #include "c150debug.h"
@@ -67,6 +67,29 @@ int main(int argc, char *argv[]) {
 
     // debugging
     initDebugLog("fileserverdebug.txt", argv[0]);
+    c150debug->setIndent("    "); // if merge client/server logs, server stuff
+                                  // will be indented
+
+    // create socket
+    try {
+        c150debug->printf(
+            C150APPLICATION,
+            "Creating C150NastyDgmSocket(nastiness=%d)",
+            netNastiness
+        );
+        C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
+        c150debug->printf(C150APPLICATION, "Ready to accept messages");
+    } catch (C150NetworkException e) {
+        // write to debug log
+        c150debug->printf(
+            C150ALWAYSLOG,
+            "Caught C150NetworkException: %s\n",
+            e.formattedExplanation().c_str()
+        );
+        // in case logging to file, write to console too
+        cerr << argv[0] << ": C150NetworkException: "
+             << e.formattedExplanation() << endl;
+    }
 
     return 0;
 }

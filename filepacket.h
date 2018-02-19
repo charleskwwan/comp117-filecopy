@@ -17,12 +17,14 @@ const int MAX_DATA_LEN = MAX_WRITE_LEN + 1; // reserve 1 for null terminator
 const int MAX_PCKT_LEN = HDR_LEN + MAX_WRITE_LEN;
 
 // flag masks
-const char SYN_FLAG = 0x01;
-const char BUSY_FLAG = 0x02;
-const char FILE_FLAG = 0x04;
-const char CHECK_FLAG = 0x08;
-const char RES_FLAG = 0x10;
-const char FIN_FLAG = 0x20;
+typedef char FLAG;
+const FLAG NO_FLAGS = 0;
+const FLAG SYN_FLAG = 0x01;
+const FLAG BUSY_FLAG = 0x02;
+const FLAG FILE_FLAG = 0x04;
+const FLAG CHECK_FLAG = 0x08;
+const FLAG RES_FLAG = 0x10;
+const FLAG FIN_FLAG = 0x20;
 
 
 // ==========
@@ -31,10 +33,14 @@ const char FIN_FLAG = 0x20;
 //
 // ==========
 
-struct Packet {
+struct PacketId {
     int fileid;
+    FLAG flags;
+};
+
+struct Packet {
+    PacketId id;
     int seqno; // sequence number
-    char flags;
     char data[MAX_DATA_LEN];
 };
 

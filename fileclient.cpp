@@ -29,10 +29,17 @@ using namespace C150NETWORK; // for all comp150 utils
 
 // constants
 const int TIMEOUT_DURATION = 1000; // 1 second
+const int MAX_TRIES = 5;
 
 
 // fwd declarations
 void usage(char *progname, int exitCode);
+ssize_t writePacketAndWait(
+    C150DgmSocket *sock,
+    const Packet *opcktp, int datalen,
+    Packet *ipcktp, PacketId expected,
+    int tries
+);
 
 
 // cmd line args
@@ -40,7 +47,7 @@ const int numberOfArgs = 4;
 const int serverArg = 1;
 const int netNastyArg = 2;
 const int fileNastyArg = 3;
-const int targetDirArg = 4;
+const int srcDirArg = 4;
 
 
 // ==========
@@ -69,6 +76,11 @@ int main(int argc, char *argv[]) {
     if (safeAtoi(argv[fileNastyArg], &fileNastiness) != 0) {
         fprintf(stderr, "error: <filenastiness> must be an integer\n");
         usage(argv[0], 4);
+    }
+
+    // check target directory
+    if (!isDir(argv[srcDirArg])) {
+        usage(argv[0], 8);
     }
 
     // debugging
@@ -117,4 +129,39 @@ void usage(char *progname, int exitCode) {
         progname
     );
     exit(exitCode);
+}
+
+
+// writePacketAndWait
+//      - writes a packet and waits for an expected response
+//      - will retry if timeout occurs
+//
+//  args:
+//      - sock: network socket
+//      - opcktp: outgoing packet pointer
+//      - datalen: length of outgoing packet data
+//      - ipcktp: incoming packet pointer
+//      - tries: number of tries to attempt
+//      - expected: expected packet id
+//
+//  returns:
+//      - length of data read if successful
+//      - -1 if all tries exhausted
+
+ssize_t writePacketAndWait(
+    C150DgmSocket *sock,
+    const Packet *opcktp, int datalen, // write args
+    Packet *ipcktp, PacketId expected, // read args
+    int tries
+) {
+    ssize_t readlen;
+
+    // read until successful or tries exhausted
+    do {
+        writePacket(sock, opcktp, datalen);
+        readlen = readExpectedPacket(sock, ipcktp, expected);
+        tries--;
+    } while (readlen == -1 && tries > 0);
+
+    return readlen;
 }

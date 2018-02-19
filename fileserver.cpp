@@ -65,6 +65,11 @@ int main(int argc, char *argv[]) {
         usage(argv[0], 4);
     }
 
+    // check target directory
+    if (!isDir(argv[targetDirArg])) {
+        usage(argv[0], 8);
+    }
+
     // debugging
     initDebugLog("fileserverdebug.txt", argv[0]);
     c150debug->setIndent("    "); // if merge client/server logs, server stuff
@@ -78,6 +83,9 @@ int main(int argc, char *argv[]) {
             netNastiness
         );
         C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
+
+        sock -> turnOnTimeouts(TIMEOUT_DURATION);
+
         c150debug->printf(C150APPLICATION, "Ready to accept messages");
     } catch (C150NetworkException e) {
         // write to debug log

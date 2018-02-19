@@ -40,6 +40,16 @@ core.*
 # File samples
 SRC/
 TARGET/
+HEADERS/
 
-# gradelogs
+# logs
 GRADELOG*.txt
+fileserverdebug.txt
+fileclientdebug.txt
+
+# executables
+fileserver
+fileclient
+nastyfiletest
+sha1test
+makedatafile

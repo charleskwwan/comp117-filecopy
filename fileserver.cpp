@@ -65,6 +65,9 @@ int main(int argc, char *argv[]) {
         usage(argv[0], 4);
     }
 
+    // debugging
+    initDebugLog("fileserverdebug.txt", argv[0]);
+
     return 0;
 }
 

@@ -33,6 +33,7 @@
 # Do all C++ compies with g++
 CPP = g++
 CPPFLAGS = -g -Wall -Werror -I$(C150LIB)
+SECFLAGS = -lssl -lcrypto
 
 # Where the COMP 150 shared utilities live, including c150ids.a and userports.csv
 # Note that environment variable COMP117 must be set for this to work!
@@ -48,22 +49,22 @@ INCLUDES = $(C150INCLUDES) $(FILEINCLUDES)
 all: nastyfiletest makedatafile sha1test fileserver fileclient
 
 fileserver: fileserver.o $(C150AR) $(INCLUDES)
-	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp $(C150AR)
+	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp $(C150AR) $(SECFLAGS)
 
 fileclient: fileclient.o $(C150AR) $(INCLUDES)
-	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp $(C150AR)
+	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp $(C150AR) $(SECFLAGS)
 
 #
 # Build the nastyfiletest sample
 #
 nastyfiletest: nastyfiletest.cpp  $(C150AR) $(INCLUDES)
-	$(CPP) -o nastyfiletest  $(CPPFLAGS) nastyfiletest.cpp $(C150AR)
+	$(CPP) -o nastyfiletest  $(CPPFLAGS) nastyfiletest.cpp $(C150AR) 
 
 #
 # Build the sha1test
 #
 sha1test: sha1test.cpp
-	$(CPP) -o sha1test sha1test.cpp -lssl -lcrypto
+	$(CPP) -o sha1test sha1test.cpp $(SECFLAGS)
 
 #
 # Build the makedatafile 

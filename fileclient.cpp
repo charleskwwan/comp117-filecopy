@@ -161,6 +161,7 @@ bool isExpected(Packet *pcktp, PacketExpect expect) {
 
 // readExpectedPacket
 //      - reads packets until an expected one arrives or timeout occurs
+//      - any unexpected packets are DROPPED
 // 
 //  args:
 //      - sock: socket
@@ -184,6 +185,31 @@ ssize_t readExpectedPacket(
 
     if (readlen != -1) *pcktp = tmp; // return packet to caller
     return readlen;
+}
+
+
+// writePacketWithRetries
+//      - writes a packet and waits for a response
+//      - will retry after a timeout a certain number of times
+//
+//  args:
+//      - sock: socket
+//      - opcktp: outgoing packet
+//      - datalen: length of data in opckt
+//      - ipcktp: incoming packet
+//      - expect: expectation for incoming packet
+//      - tries: max number of tries allowed, must be >=1, defaults to 1
+// 
+//  returns:
+//      - length of data read if successful
+//      - -1 if timed out
+
+ssize_t writePacketWithRetries(
+    C150DgmSocket *sock,
+    Packet *opcktp, int datalen,
+    Packet *ipcktp, PacketExpect expect,
+    int tries
+) {
 }
 
 

@@ -84,9 +84,18 @@ int main(int argc, char *argv[]) {
         );
         C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
 
-        sock -> turnOnTimeouts(TIMEOUT_DURATION);
+        sock -> turnOffTimeouts(); // server always waits, never initiates
 
         c150debug->printf(C150APPLICATION, "Ready to accept messages");
+
+        // temp
+        Packet pckt;
+        size_t readlen = readPacket(sock, &pckt); // pckt always null terminated by read
+        cout << "readlen: " << readlen << endl
+             << "fileid: " << pckt.fileid << endl
+             << "seqno: " << pckt.seqno << endl
+             << "data: " << pckt.data << endl;
+
     } catch (C150NetworkException e) {
         // write to debug log
         c150debug->printf(

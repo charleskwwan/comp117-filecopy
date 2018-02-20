@@ -80,31 +80,44 @@ int main(int argc, char *argv[]) {
 
     // debugging
     initDebugLog("fileclientdebug.txt", argv[0]);
+    // initDebugLog(NULL, argv[0]);
 
-    // create socket
-    // try {
-    //     c150debug->printf(
-    //         C150APPLICATION,
-    //         "Creating C150NastyDgmSocket(nastiness=%d)",
-    //         netNastiness
-    //     );
-    //     C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
+    try {
+        // create socket
+        c150debug->printf(
+            C150APPLICATION,
+            "Creating C150NastyDgmSocket(nastiness=%d)",
+            netNastiness
+        );
+        C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
 
-    //     sock -> setServerName(argv[serverArg]);
-    //     sock -> turnOnTimeouts(TIMEOUT_DURATION);
+        sock -> setServerName(argv[serverArg]);
+        sock -> turnOnTimeouts(TIMEOUT_DURATION);
 
-    //     c150debug->printf(C150APPLICATION, "Ready to send messages");
-    // } catch (C150NetworkException e) {
-    //     // write to debug log
-    //     c150debug->printf(
-    //         C150ALWAYSLOG,
-    //         "Caught C150NetworkException: %s\n",
-    //         e.formattedExplanation().c_str()
-    //     );
-    //     // in case logging to file, write to console too
-    //     cerr << argv[0] << ": C150NetworkException: "
-    //          << e.formattedExplanation() << endl;
-    // }
+        c150debug->printf(C150APPLICATION, "Ready to send messages");
+
+
+        // temp
+        Packet pckt(23, SYN_FLAG, 40, "hello world!", 13);
+        cout << "fileid: " << pckt.fileid << endl
+             << "seqno: " << pckt.seqno << endl
+             << "data: " << pckt.data << endl;
+        writePacket(sock, &pckt, strlen("hello world!") + 1);
+
+
+        // clean up socket
+        delete sock;
+    } catch (C150NetworkException e) {
+        // write to debug log
+        c150debug->printf(
+            C150ALWAYSLOG,
+            "Caught C150NetworkException: %s\n",
+            e.formattedExplanation().c_str()
+        );
+        // in case logging to file, write to console too
+        cerr << argv[0] << ": C150NetworkException: "
+             << e.formattedExplanation() << endl;
+    }
 
     return 0;
 }
@@ -112,7 +125,7 @@ int main(int argc, char *argv[]) {
 
 // ==========
 // 
-// FUNCTION DEFS
+// DEFS
 //
 // ==========
 
@@ -127,4 +140,87 @@ void usage(char *progname, int exitCode) {
 }
 
 
+// PacketExpect
+//      - defines an expectation for the next read packet by certain identifying
+//        values in a packet
 
+struct PacketExpect {
+    int fileid; // when = NULL_FILEID (filepacket.h), any fileid allowed
+    FLAG flags;
+};
+
+
+// checks if a packet is expected
+//      - use Packet* instead of Packet since packets are pretty big
+
+bool isExpected(Packet *pcktp, PacketExpect expect) {
+    return (expect.fileid == pcktp->fileid || expect.fileid == NULL_FILEID) &&
+           (expect.flags & pcktp->flags) == expect.flags;
+}
+
+
+// readExpectedPacket
+//      - reads packets until an expected one arrives or timeout occurs
+// 
+//  args:
+//      - sock: socket
+//      - pcktp: location to store read packet
+//      - expect: attributes expected in packet
+//
+//  returns:
+//      - length of data read if successful
+//      - -1 if timed out
+
+ssize_t readExpectedPacket(
+    C150DgmSocket *sock, Packet *pcktp,
+    PacketExpect expect
+) {
+    Packet tmp;
+    ssize_t readlen;
+
+    do {
+        readlen = readPacket(sock, &tmp);
+    } while (readlen >= 0 && !isExpected(&tmp, expect));
+
+    if (readlen != -1) *pcktp = tmp; // return packet to caller
+    return readlen;
+}
+
+
+// sendFile
+//      - sends a file via a socket
+//
+//  args:
+//      - sock: socket
+//      - dir: name of file directory
+//      - fname: name of file
+//      - fileNastiness: nastiness with which to send file
+//
+//  return: n/a
+//
+//  notes:
+//      - if directory or file is invalid, nothing happens
+//      - if network fails, server is assumed down and exception is thrown
+//
+//  NEEDSWORK: add logs for grading
+//  NEEDSWORK: implement filecopy, currently only does end to end checking
+
+void sendFile(
+    C150DgmSocket *sock,
+    string dir,
+    string fname,
+    int fileNastiness
+) {
+    string fullFname = makeFileName(dir, fname);
+    char *fbuf = NULL; // file buffer
+    string fhash; // file hash
+
+    // read file
+    readFile(fullFname, fileNastiness, &fbuf);
+    if (fbuf == NULL) return; // file read failed
+    fhash = hashFile(fullFname);
+
+    // free buffer if file read
+    // (currently necessary due to readFile implementation)
+    if (fbuf != NULL) delete [] fbuf;
+}

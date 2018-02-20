@@ -243,11 +243,10 @@ string hashFile(string fname) {
 
 
 // readFile
-//      - reads a file from a given directory
+//      - reads a file
 //
 //  args:
-//      - dirname: name of directory
-//      - fname: file name
+//      - fname: full file name (relative to curr dir or absolute)
 //      - nastiness: with which to read the file
 //      - bufp: location to put resulting file buffer
 //
@@ -258,7 +257,7 @@ string hashFile(string fname) {
 //
 //  note:
 //      - readFile will allocate a buffer with the file in it
-//      - allocated buffer must be DELETED by caller
+//      - allocated buffer MUST BE DELETED by caller
 //      - a returned error code DOES NOT mean that file read failed. caller
 //        needs to check buffer at bufp.
 //          - if *bufp = null, readFile was unsuccessful
@@ -269,24 +268,21 @@ string hashFile(string fname) {
 //             somehow. consdiered string return type, but string cannot
 //             represent a nonvalue like NULL.
 
-int readFile(string dirname, string fname, int nastiness, char **bufp) {
+int readFile(string fname, int nastiness, char **bufp) {
+    if (!isFile(fname)) return -1;
     *bufp = NULL; // assume unsuccessful fread
+
     ssize_t fsize = getFileSize(fname);
-
-    // verify that file exists
-    if (fsize < 0) return -1;
-
-    string fullFname = makeFileName(dirname, fname);
     char *buf = new char[fsize]; // buffer for full file
     NASTYFILE fp(nastiness);
     int retval = 0;
 
     // open file in rb to avoid line end munging
-    if (fp.fopen(fullFname.c_str(), "rb") == NULL) {
+    if (fp.fopen(fname.c_str(), "rb") == NULL) {
         c150debug->printf(
             C150APPLICATION,
             "readFile: Error opening file %s, errno=%s",
-            fullFname.c_str(), strerror(errno)
+            fname.c_str(), strerror(errno)
         );
         return errno; // return straight away, since no more work needed
     }
@@ -296,7 +292,7 @@ int readFile(string dirname, string fname, int nastiness, char **bufp) {
         c150debug->printf(
             C150APPLICATION,
             "readFile: Error reading file %s, errno=%s",
-            fullFname.c_str(), strerror(errno)
+            fname.c_str(), strerror(errno)
         );
         retval = errno; // still should close fp
     } else {
@@ -308,7 +304,7 @@ int readFile(string dirname, string fname, int nastiness, char **bufp) {
         c150debug->printf(
             C150APPLICATION,
             "readFile: Error closing file %s, errno=%s",
-            fullFname.c_str(), strerror(errno)
+            fname.c_str(), strerror(errno)
         );
         retval = errno;
     }

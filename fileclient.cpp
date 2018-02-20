@@ -210,6 +210,14 @@ ssize_t writePacketWithRetries(
     Packet *ipcktp, PacketExpect expect,
     int tries
 ) {
+    ssize_t readlen;
+    do {
+        writePacket(sock, opcktp, datalen);
+        readlen = readExpectedPacket(sock, ipcktp, epxect);
+        tries--;
+    } while (tries > 0 && readlen < 0);
+
+    return readlen;
 }
 
 

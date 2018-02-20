@@ -102,6 +102,7 @@ ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
     ssize_t readlen = sock -> read((char*)pcktp, MAX_PCKT_LEN);
 
     if (sock -> timedout()) {
+        // automatically logged to c150debug
         return -1;
     } else {
         pcktp->data[readlen - HDR_LEN + 1] = '\0'; // ensure null terminated
@@ -130,42 +131,6 @@ void writePacket(C150DgmSocket *sock, const Packet *pcktp, int datalen) {
 }
 
 
-// readExpectedPacket
-//      - reads packets from socket until an 'expected' packet type is received,
-//        or a timeout occurs
-//      - ALL packets that are not 'expected' are ignored and dropped
-//
-//  args:
-//      - sock: socket to read from
-//      - pcktp: location to store packet
-//      - expected: expected packet id
-//
-//  returns:
-//      - length of data read if successful
-//      - -1 if timed out
-
-ssize_t readExpectedPacket(
-    C150DgmSocket *sock,Packet *pcktp,
-    PacketId expected
-) {
-    Packet tmp;
-    ssize_t readlen;
-
-    // read until timeout OR expected flags found
-    do {
-        readlen = readPacket(sock, &tmp);
-    } while (
-        readlen != -1 && 
-        !(tmp.id.fileid == expected.fileid && tmp.id.flags & expected.flags)
-    );
-
-    if (readlen != -1) {
-        *pcktp = tmp;
-    }
-
-    return readlen;
-}
-
 // ==========
 // 
 // FILES
@@ -173,22 +138,22 @@ ssize_t readExpectedPacket(
 // ==========
 
 // checks if given dirname specifies a valid directory
-bool isDir(const char *dirname) {
+bool isDir(string dirname) {
     struct stat statbuf;
 
-    if (lstat(dirname, &statbuf) != 0) {
-        fprintf(
-            stderr,
-            "error (isDir): Directory '%s' does not exist\n",
-            dirname
+    if (lstat(dirname.c_str(), &statbuf) != 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "isDir: Directory '%s' does not exist\n",
+            dirname.c_str()
         );
         return false;
     }
     if (!S_ISDIR(statbuf.st_mode)) {
-        fprintf(
-            stderr,
-            "error (isDir): File '%s' exists but is not a directory\n",
-            dirname
+        c150debug->printf(
+            C150APPLICATION,
+            "isDir: File '%s' exists but is not a directory\n",
+            dirname.c_str()
         );
         return false;
     }
@@ -198,27 +163,50 @@ bool isDir(const char *dirname) {
 
 
 // checks if given fname specifies a valid file
-bool isFile(const char *fname) {
+bool isFile(string fname) {
     struct stat statbuf;
 
-    if (lstat(fname, &statbuf) != 0) {
-        fprintf(
-            stderr,
-            "error (isFile): File '%s' does not exist\n",
-            fname
+    if (lstat(fname.c_str(), &statbuf) != 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "isFile: File '%s' does not exist\n",
+            fname.c_str()
         );
         return false;
     }
     if (!S_ISREG(statbuf.st_mode)) {
-        fprintf(
-            stderr,
-            "error (isFile): File '%s' exists but is not a regular file\n",
-            fname
+        c150debug->printf(
+            C150APPLICATION,
+            "isFile: File '%s' exists but is not a regular file\n",
+            fname.c_str()
         );
         return false;
     }
 
     return true;
+}
+
+
+// combines a directory and file name, making sure there's a / in between
+string makeFileName(string dirname, string fname) {
+    stringstream ss;
+
+    ss << dirname;
+    // ensure dirname ends with /
+    if (dirname.substr(dirname.length() - 1, 1) != "/") ss << '/';
+    ss << fname;
+
+    return ss.str();
+}
+
+
+// getFileSize
+//  returns:
+//      - size of file
+//      - -1, if file was invalid
+ssize_t getFileSize(string fname) {
+    struct stat statbuf;
+    return lstat(fname.c_str(), &statbuf) != 0 ? -1 : statbuf.st_size;
 }
 
 
@@ -234,10 +222,10 @@ bool isFile(const char *fname) {
 //
 //  NEEDSWORK (maybe): do we need to go through NASTYFILE?
 
-string hashFile(const char *fname) {
+string hashFile(string fname) {
     if (!isFile(fname)) return '\0'; // verify file
 
-    ifstream *t = new ifstream(fname);
+    ifstream *t = new ifstream(fname.c_str());
     stringstream *buffer = new stringstream;
     unsigned char obuf[20];
 
@@ -251,6 +239,81 @@ string hashFile(const char *fname) {
     delete t;
     delete buffer;
     return string((char *)obuf);
+}
+
+
+// readFile
+//      - reads a file from a given directory
+//
+//  args:
+//      - dirname: name of directory
+//      - fname: file name
+//      - nastiness: with which to read the file
+//      - bufp: location to put resulting file buffer
+//
+//  returns:
+//      - 0 if non errors occurred
+//      - nonzero error code if something happened
+//          - -1 specifies file was bad
+//
+//  note:
+//      - readFile will allocate a buffer with the file in it
+//      - allocated buffer must be DELETED by caller
+//      - a returned error code DOES NOT mean that file read failed. caller
+//        needs to check buffer at bufp.
+//          - if *bufp = null, readFile was unsuccessful
+//          - if *bufp != null, readFile successfully read file
+//
+//  NEEDSWORK: bad design to have allocation by callee and deallocation by
+//             caller. however, wanted return value to be able to show error
+//             somehow. consdiered string return type, but string cannot
+//             represent a nonvalue like NULL.
+
+int readFile(string dirname, string fname, int nastiness, char **bufp) {
+    *bufp = NULL; // assume unsuccessful fread
+    ssize_t fsize = getFileSize(fname);
+
+    // verify that file exists
+    if (fsize < 0) return -1;
+
+    string fullFname = makeFileName(dirname, fname);
+    char *buf = new char[fsize]; // buffer for full file
+    NASTYFILE fp(nastiness);
+    int retval = 0;
+
+    // open file in rb to avoid line end munging
+    if (fp.fopen(fullFname.c_str(), "rb") == NULL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "readFile: Error opening file %s, errno=%s",
+            fullFname.c_str(), strerror(errno)
+        );
+        return errno; // return straight away, since no more work needed
+    }
+
+    // read whole file
+    if (fp.fread(buf, 1, fsize) != (size_t)fsize) {
+        c150debug->printf(
+            C150APPLICATION,
+            "readFile: Error reading file %s, errno=%s",
+            fullFname.c_str(), strerror(errno)
+        );
+        retval = errno; // still should close fp
+    } else {
+        *bufp = buf; // fread successful, return to buffer to client
+    }
+
+    // close file - unlikely to fail but check anyway
+    if (fp.fclose() != 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "readFile: Error closing file %s, errno=%s",
+            fullFname.c_str(), strerror(errno)
+        );
+        retval = errno;
+    }
+
+    return retval;
 }
 
 

@@ -34,12 +34,7 @@ const int MAX_TRIES = 5;
 
 // fwd declarations
 void usage(char *progname, int exitCode);
-ssize_t writePacketAndWait(
-    C150DgmSocket *sock,
-    const Packet *opcktp, int datalen,
-    Packet *ipcktp, PacketId expected,
-    int tries
-);
+void sendFile(C150DgmSocket *sock, string dir, string fname, int fileNastiness);
 
 
 // cmd line args
@@ -87,29 +82,29 @@ int main(int argc, char *argv[]) {
     initDebugLog("fileclientdebug.txt", argv[0]);
 
     // create socket
-    try {
-        c150debug->printf(
-            C150APPLICATION,
-            "Creating C150NastyDgmSocket(nastiness=%d)",
-            netNastiness
-        );
-        C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
+    // try {
+    //     c150debug->printf(
+    //         C150APPLICATION,
+    //         "Creating C150NastyDgmSocket(nastiness=%d)",
+    //         netNastiness
+    //     );
+    //     C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
 
-        sock -> setServerName(argv[serverArg]);
-        sock -> turnOnTimeouts(TIMEOUT_DURATION);
+    //     sock -> setServerName(argv[serverArg]);
+    //     sock -> turnOnTimeouts(TIMEOUT_DURATION);
 
-        c150debug->printf(C150APPLICATION, "Ready to send messages");
-    } catch (C150NetworkException e) {
-        // write to debug log
-        c150debug->printf(
-            C150ALWAYSLOG,
-            "Caught C150NetworkException: %s\n",
-            e.formattedExplanation().c_str()
-        );
-        // in case logging to file, write to console too
-        cerr << argv[0] << ": C150NetworkException: "
-             << e.formattedExplanation() << endl;
-    }
+    //     c150debug->printf(C150APPLICATION, "Ready to send messages");
+    // } catch (C150NetworkException e) {
+    //     // write to debug log
+    //     c150debug->printf(
+    //         C150ALWAYSLOG,
+    //         "Caught C150NetworkException: %s\n",
+    //         e.formattedExplanation().c_str()
+    //     );
+    //     // in case logging to file, write to console too
+    //     cerr << argv[0] << ": C150NetworkException: "
+    //          << e.formattedExplanation() << endl;
+    // }
 
     return 0;
 }
@@ -132,36 +127,4 @@ void usage(char *progname, int exitCode) {
 }
 
 
-// writePacketAndWait
-//      - writes a packet and waits for an expected response
-//      - will retry if timeout occurs
-//
-//  args:
-//      - sock: network socket
-//      - opcktp: outgoing packet pointer
-//      - datalen: length of outgoing packet data
-//      - ipcktp: incoming packet pointer
-//      - tries: number of tries to attempt
-//      - expected: expected packet id
-//
-//  returns:
-//      - length of data read if successful
-//      - -1 if all tries exhausted
 
-ssize_t writePacketAndWait(
-    C150DgmSocket *sock,
-    const Packet *opcktp, int datalen, // write args
-    Packet *ipcktp, PacketId expected, // read args
-    int tries
-) {
-    ssize_t readlen;
-
-    // read until successful or tries exhausted
-    do {
-        writePacket(sock, opcktp, datalen);
-        readlen = readExpectedPacket(sock, ipcktp, expected);
-        tries--;
-    } while (readlen == -1 && tries > 0);
-
-    return readlen;
-}

@@ -33,13 +33,9 @@ const FLAG FIN_FLAG = 0x20;
 //
 // ==========
 
-struct PacketId {
+struct Packet {
     int fileid;
     FLAG flags;
-};
-
-struct Packet {
-    PacketId id;
     int seqno; // sequence number
     char data[MAX_DATA_LEN];
 };

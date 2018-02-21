@@ -98,11 +98,11 @@ int main(int argc, char *argv[]) {
 
 
         // temp
-        Packet pckt(23, REQ_FLAG, 40, "hello world!", 13);
+        Packet pckt(23, REQ_FL, 40, "hello world!", 13);
         cout << "fileid: " << pckt.fileid << endl
              << "seqno: " << pckt.seqno << endl
              << "data: " << pckt.data << endl;
-        writePacket(sock, &pckt, strlen("hello world!") + 1);
+        writePacket(sock, &pckt);
 
         // clean up socket
         delete sock;
@@ -149,7 +149,7 @@ void usage(char *progname, int exitCode) {
 //      - expect: attributes expected in packet
 //
 //  returns:
-//      - length of data read if successful
+//      - length of packet data read if successful
 //      - -1 if timed out
 
 ssize_t readExpectedPacket(
@@ -157,14 +157,14 @@ ssize_t readExpectedPacket(
     PacketExpect expect
 ) {
     Packet tmp;
-    ssize_t readlen;
+    ssize_t datalen;
 
     do {
-        readlen = readPacket(sock, &tmp);
-    } while (readlen >= 0 && !isExpected(&tmp, expect));
+        datalen = readPacket(sock, &tmp);
+    } while (datalen >= 0 && !isExpected(&tmp, expect));
 
-    if (readlen != -1) *pcktp = tmp; // return packet to caller
-    return readlen;
+    if (datalen != -1) *pcktp = tmp; // return packet to caller
+    return datalen;
 }
 
 
@@ -175,7 +175,6 @@ ssize_t readExpectedPacket(
 //  args:
 //      - sock: socket
 //      - opcktp: outgoing packet
-//      - datalen: length of data in opckt
 //      - ipcktp: incoming packet
 //      - expect: expectation for incoming packet
 //      - tries: max number of tries allowed, must be >=1, defaults to 1
@@ -186,13 +185,13 @@ ssize_t readExpectedPacket(
 
 ssize_t writePacketWithRetries(
     C150DgmSocket *sock,
-    Packet *opcktp, int datalen,
+    Packet *opcktp,
     Packet *ipcktp, PacketExpect expect,
     int tries
 ) {
     ssize_t readlen;
     do {
-        writePacket(sock, opcktp, datalen);
+        writePacket(sock, opcktp);
         readlen = readExpectedPacket(sock, ipcktp, expect);
         tries--;
     } while (tries > 0 && readlen < 0);
@@ -226,18 +225,10 @@ void sendFile(
     int fileNastiness
 ) {
     string fullFname = makeFileName(dir, fname);
-    FileHandler fhandler(fullFname, )
+    FileHandler fhandler(fullFname, fileNastiness);
 
-    // string fullFname = makeFileName(dir, fname);
-    // char *fbuf = NULL; // file buffer
-    // string fhash; // file hash
+    // check if file was successfully loaded
+    if (fhandler.getFile() == NULL) return; 
 
-    // // read file
-    // readFile(fullFname, fileNastiness, &fbuf);
-    // if (fbuf == NULL) return; // file read failed
-    // fhash = hashFile(fullFname);
 
-    // // free buffer if file read
-    // // (currently necessary due to readFile implementation)
-    // if (fbuf != NULL) delete [] fbuf;
 }

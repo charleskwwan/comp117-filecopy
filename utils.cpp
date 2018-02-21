@@ -92,7 +92,7 @@ void initDebugLog(const char *logname, const char *progname) {
 //      - pcktp: location to store packet
 //
 //  returns:
-//      - length of data read if successful
+//      - length of data member in packet read if successful
 //      - -1 if timed out
 
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
@@ -103,7 +103,7 @@ ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
         return -1;
     } else {
         pcktp->data[readlen - HDR_LEN + 1] = '\0'; // ensure null terminated
-        return readlen;
+        return readlen - HDR_LEN;
     }
 }
 
@@ -114,17 +114,21 @@ ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
 //  args:
 //      - sock: socket to write to
 //      - pcktp: location of packet to be sent
-//      - datalen: length of data section in packet (incl. )
 //
 //  returns: n/a
 //
 //  note:
-//      - if datalen exceeds max allowed, writePacket will SILENTLY send the max
-//        allowed
+//      - if datalen exceeds max allowed, writePacket will send a copy of the
+//        packet with the max allowed datalen, but NOT modify the original
+//        packet
+//      - although pcktp could be made simply pckt (not a pointer) since copy
+//        will be sent anyway, pcktp is kept to be consistent with write
+//        style of interface
 
-void writePacket(C150DgmSocket *sock, const Packet *pcktp, int datalen) {
-    datalen = min(datalen, MAX_WRITE_LEN);
-    sock -> write((char*)pcktp, HDR_LEN + datalen);
+void writePacket(C150DgmSocket *sock, const Packet *pcktp) {
+    Packet pckt = *pcktp;
+    pckt.datalen = min(pckt.datalen, MAX_WRITE_LEN);
+    sock -> write((char *)&pckt, HDR_LEN + pckt.datalen);
 }
 
 

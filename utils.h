@@ -21,12 +21,13 @@ using namespace C150NETWORK; // for all comp150 utils
 //
 // ==========
 
-// constants
-const char IDLE_STATE = 1;
-const char REQUEST_STATE = 2;
-const char FILE_STATE = 3;
-const char CHECK_STATE = 4;
-const char END_STATE = 5;
+// STATE enum
+enum State {
+    IDLE_ST,
+    FILE_ST,
+    CHECK_ST,
+    FIN_ST // finish/end
+};
 
 
 // functions
@@ -52,7 +53,7 @@ struct PacketExpect {
 
 // functions
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp);
-void writePacket(C150DgmSocket *sock, const Packet *pcktp, int datalen);
+void writePacket(C150DgmSocket *sock, const Packet *pcktp);
 bool isExpected(Packet *pcktp, PacketExpect expect);
 
 

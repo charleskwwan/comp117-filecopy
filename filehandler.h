@@ -10,6 +10,10 @@
 #include <string>
 
 
+// constants
+const size_t HASH_LEN = 20;
+
+
 // ==========
 // 
 // FILEHANDLER
@@ -36,10 +40,10 @@ protected:
     string fname; // filename
     char *buf; // file buffer
     size_t buflen; // length of buffer
-    unsigned char hash[20]; // hash for file in buf
+    unsigned char hash[HASH_LEN]; // hash for file in buf
     int nastiness; // nastiness with which to read file
 
-    void cleanup(); // cleans up 
+    void cleanup();
     int read(); // read file with fname to buf
     void setHash(); // hashes buf, saves to hash
 };

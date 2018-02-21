@@ -103,7 +103,7 @@ int FileHandler::read() {
 
 void FileHandler::setHash() {
     if (buf == NULL) {
-        for (int i = 0; i < 20; i++) hash[i] = '\0';
+        for (unsigned i = 0; i < HASH_LEN; i++) hash[i] = '\0';
     } else {
         SHA1((const unsigned char *)buf, buflen, hash);
     }
@@ -122,7 +122,7 @@ FileHandler::FileHandler(int _nastiness) {
     nastiness = _nastiness;
     buf = NULL;
     buflen = 0;
-    for (int i = 0; i < 20; i++) hash[i] = '\0'; // set hash to all '\0'
+    for (unsigned i = 0; i < HASH_LEN; i++) hash[i] = '\0';
 }
 
 // constructor

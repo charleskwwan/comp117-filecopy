@@ -43,16 +43,16 @@ C150AR = $(C150LIB)c150ids.a
 
 LDFLAGS = 
 C150INCLUDES = $(C150LIB)c150dgmsocket.h $(C150LIB)c150nastydgmsocket.h $(C150LIB)c150network.h $(C150LIB)c150exceptions.h $(C150LIB)c150debug.h $(C150LIB)c150utility.h
-FILEINCLUDES = fileutils.h
+FILEINCLUDES = utils.h packet.h filehandler.h
 INCLUDES = $(C150INCLUDES) $(FILEINCLUDES)
 
 all: nastyfiletest makedatafile sha1test fileserver fileclient
 
 fileserver: fileserver.o $(C150AR) $(INCLUDES)
-	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp $(C150AR) $(SECFLAGS)
+	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp utils.cpp filehandler.cpp $(C150AR) $(SECFLAGS)
 
 fileclient: fileclient.o $(C150AR) $(INCLUDES)
-	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp $(C150AR) $(SECFLAGS)
+	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp utils.cpp filehandler.cpp $(C150AR) $(SECFLAGS)
 
 #
 # Build the nastyfiletest sample

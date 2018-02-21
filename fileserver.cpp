@@ -17,7 +17,7 @@
 #include "c150grading.h"
 #include "c150debug.h"
 
-#include "fileutils.h"
+#include "utils.h"
 
 using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
@@ -28,6 +28,7 @@ using namespace C150NETWORK; // for all comp150 utils
 
 // fwd declarations
 void usage(char *progname, int exitCode);
+void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness);
 
 
 // cmd line args
@@ -125,4 +126,21 @@ void usage(char *progname, int exitCode) {
         progname
     );
     exit(exitCode);
+}
+
+
+// run
+//      - runs the main server loop
+//      - loop continuously receives packets and responds to clients based on
+//        the current state (checking file? transferring file? etc.)
+//
+//  args:
+//      - sock: socket
+//      - targetDir: name of target directory
+//      - fileNastiness: nastiness with which to handle files
+//
+//  returns: n/a
+
+void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
+
 }

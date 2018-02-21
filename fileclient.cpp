@@ -17,11 +17,11 @@
 #include <iostream>
 
 #include "c150nastydgmsocket.h"
-#include "c150nastyfile.h"
 #include "c150grading.h"
 #include "c150debug.h"
 
-#include "fileutils.h"
+#include "utils.h"
+#include "filehandler.h"
 
 using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
@@ -98,12 +98,11 @@ int main(int argc, char *argv[]) {
 
 
         // temp
-        Packet pckt(23, SYN_FLAG, 40, "hello world!", 13);
+        Packet pckt(23, REQ_FLAG, 40, "hello world!", 13);
         cout << "fileid: " << pckt.fileid << endl
              << "seqno: " << pckt.seqno << endl
              << "data: " << pckt.data << endl;
         writePacket(sock, &pckt, strlen("hello world!") + 1);
-
 
         // clean up socket
         delete sock;
@@ -137,25 +136,6 @@ void usage(char *progname, int exitCode) {
         progname
     );
     exit(exitCode);
-}
-
-
-// PacketExpect
-//      - defines an expectation for the next read packet by certain identifying
-//        values in a packet
-
-struct PacketExpect {
-    int fileid; // when = NULL_FILEID (filepacket.h), any fileid allowed
-    FLAG flags;
-};
-
-
-// checks if a packet is expected
-//      - use Packet* instead of Packet since packets are pretty big
-
-bool isExpected(Packet *pcktp, PacketExpect expect) {
-    return (expect.fileid == pcktp->fileid || expect.fileid == NULL_FILEID) &&
-           (expect.flags & pcktp->flags) == expect.flags;
 }
 
 
@@ -213,7 +193,7 @@ ssize_t writePacketWithRetries(
     ssize_t readlen;
     do {
         writePacket(sock, opcktp, datalen);
-        readlen = readExpectedPacket(sock, ipcktp, epxect);
+        readlen = readExpectedPacket(sock, ipcktp, expect);
         tries--;
     } while (tries > 0 && readlen < 0);
 
@@ -246,15 +226,18 @@ void sendFile(
     int fileNastiness
 ) {
     string fullFname = makeFileName(dir, fname);
-    char *fbuf = NULL; // file buffer
-    string fhash; // file hash
+    FileHandler fhandler(fullFname, )
 
-    // read file
-    readFile(fullFname, fileNastiness, &fbuf);
-    if (fbuf == NULL) return; // file read failed
-    fhash = hashFile(fullFname);
+    // string fullFname = makeFileName(dir, fname);
+    // char *fbuf = NULL; // file buffer
+    // string fhash; // file hash
 
-    // free buffer if file read
-    // (currently necessary due to readFile implementation)
-    if (fbuf != NULL) delete [] fbuf;
+    // // read file
+    // readFile(fullFname, fileNastiness, &fbuf);
+    // if (fbuf == NULL) return; // file read failed
+    // fhash = hashFile(fullFname);
+
+    // // free buffer if file read
+    // // (currently necessary due to readFile implementation)
+    // if (fbuf != NULL) delete [] fbuf;
 }

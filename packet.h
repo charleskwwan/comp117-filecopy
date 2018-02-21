@@ -1,12 +1,12 @@
-// filepacket.h
+// packet.h
 //
 // Defines packet struct
 //
 // By: Justin Jo and Charles Wan
 
 
-#ifndef _FILEPACKET_H_
-#define _FILEPACKET_H_
+#ifndef _FCOPY_PACKET_H_
+#define _FCOPY_PACKET_H_
 
 
 #include <cstring>
@@ -32,7 +32,7 @@ const int NULL_FILEID = 0; // invalid fileid
 // flag masks
 const FLAG NO_FLAGS = 0;
 const FLAG ALL_FLAGS = 0xFF;
-const FLAG SYN_FLAG = 0x01;
+const FLAG REQ_FLAG = 0x01;
 const FLAG BUSY_FLAG = 0x02;
 const FLAG FILE_FLAG = 0x04;
 const FLAG CHECK_FLAG = 0x08;

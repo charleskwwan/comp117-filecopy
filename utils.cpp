@@ -1,23 +1,19 @@
-// fileutils.h
+// utils.h
 //
-// Includes utility functions shared between fileclient and fileserver
+// Defines utility functions shared between fileclient and fileserver
 //
 // By: Justin Jo and Charles Wan
 
-#ifndef _FILEUTILS_H_
-#define _FILEUTILS_H_
-
-
-#include <sys/stat.h> 
+#include <dirent.h>
+#include <sys/stat.h>
 #include <string>
-#include <fstream>
-#include <sstream>
 #include <algorithm> // std::max, std::min
-#include <openssl/sha.h>
 
 #include "c150dgmsocket.h"
 #include "c150debug.h"
-#include "filepacket.h"
+
+#include "utils.h"
+#include "packet.h"
 
 using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
@@ -87,6 +83,7 @@ void initDebugLog(const char *logname, const char *progname) {
 //
 // ==========
 
+
 // readPacket
 //      - reads a packet from a socket
 //
@@ -131,6 +128,15 @@ void writePacket(C150DgmSocket *sock, const Packet *pcktp, int datalen) {
 }
 
 
+// checks if a packet is expected
+//      - use Packet* instead of Packet since packets are pretty big
+
+bool isExpected(Packet *pcktp, PacketExpect expect) {
+    return (expect.fileid == pcktp->fileid || expect.fileid == NULL_FILEID) &&
+           (expect.flags & pcktp->flags) == expect.flags;
+}
+
+
 // ==========
 // 
 // FILES
@@ -140,6 +146,7 @@ void writePacket(C150DgmSocket *sock, const Packet *pcktp, int datalen) {
 // checks if given dirname specifies a valid directory
 bool isDir(string dirname) {
     struct stat statbuf;
+    DIR *dir;
 
     if (lstat(dirname.c_str(), &statbuf) != 0) {
         c150debug->printf(
@@ -149,6 +156,7 @@ bool isDir(string dirname) {
         );
         return false;
     }
+
     if (!S_ISDIR(statbuf.st_mode)) {
         c150debug->printf(
             C150APPLICATION,
@@ -157,6 +165,17 @@ bool isDir(string dirname) {
         );
         return false;
     }
+
+    dir = opendir(dirname.c_str());
+    if (dir == NULL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "isDir: Directory '%s' could not be opened\n",
+            dirname.c_str()
+        );
+        return false;
+    }
+    closedir(dir);
 
     return true;
 }
@@ -204,113 +223,8 @@ string makeFileName(string dirname, string fname) {
 //  returns:
 //      - size of file
 //      - -1, if file was invalid
+
 ssize_t getFileSize(string fname) {
     struct stat statbuf;
     return lstat(fname.c_str(), &statbuf) != 0 ? -1 : statbuf.st_size;
 }
-
-
-// hashFile
-//      - computes sha1 hash for a given file
-//
-//  args:
-//      - fname: name of file
-//
-//  returns:
-//      - hash as string if successful
-//      - '\0' if file is invalid
-//
-//  NEEDSWORK (maybe): do we need to go through NASTYFILE?
-
-string hashFile(string fname) {
-    if (!isFile(fname)) return '\0'; // verify file
-
-    ifstream *t = new ifstream(fname.c_str());
-    stringstream *buffer = new stringstream;
-    unsigned char obuf[20];
-
-    *buffer << t->rdbuf();
-    SHA1(
-        (const unsigned char *)buffer->str().c_str(),
-        (buffer->str()).length(),
-        obuf
-    );
-
-    delete t;
-    delete buffer;
-    return string((char *)obuf);
-}
-
-
-// readFile
-//      - reads a file
-//
-//  args:
-//      - fname: full file name (relative to curr dir or absolute)
-//      - nastiness: with which to read the file
-//      - bufp: location to put resulting file buffer
-//
-//  returns:
-//      - 0 if non errors occurred
-//      - nonzero error code if something happened
-//          - -1 specifies file was bad
-//
-//  note:
-//      - readFile will allocate a buffer with the file in it
-//      - allocated buffer MUST BE DELETED by caller
-//      - a returned error code DOES NOT mean that file read failed. caller
-//        needs to check buffer at bufp.
-//          - if *bufp = null, readFile was unsuccessful
-//          - if *bufp != null, readFile successfully read file
-//
-//  NEEDSWORK: bad design to have allocation by callee and deallocation by
-//             caller. however, wanted return value to be able to show error
-//             somehow. consdiered string return type, but string cannot
-//             represent a nonvalue like NULL.
-
-int readFile(string fname, int nastiness, char **bufp) {
-    if (!isFile(fname)) return -1;
-    *bufp = NULL; // assume unsuccessful fread
-
-    ssize_t fsize = getFileSize(fname);
-    char *buf = new char[fsize]; // buffer for full file
-    NASTYFILE fp(nastiness);
-    int retval = 0;
-
-    // open file in rb to avoid line end munging
-    if (fp.fopen(fname.c_str(), "rb") == NULL) {
-        c150debug->printf(
-            C150APPLICATION,
-            "readFile: Error opening file %s, errno=%s",
-            fname.c_str(), strerror(errno)
-        );
-        return errno; // return straight away, since no more work needed
-    }
-
-    // read whole file
-    if (fp.fread(buf, 1, fsize) != (size_t)fsize) {
-        c150debug->printf(
-            C150APPLICATION,
-            "readFile: Error reading file %s, errno=%s",
-            fname.c_str(), strerror(errno)
-        );
-        retval = errno; // still should close fp
-    } else {
-        *bufp = buf; // fread successful, return to buffer to client
-    }
-
-    // close file - unlikely to fail but check anyway
-    if (fp.fclose() != 0) {
-        c150debug->printf(
-            C150APPLICATION,
-            "readFile: Error closing file %s, errno=%s",
-            fname.c_str(), strerror(errno)
-        );
-        retval = errno;
-    }
-
-    return retval;
-}
-
-
-#endif

@@ -135,6 +135,7 @@ void usage(char *progname, int exitCode) {
 //
 //  args:
 //      - ipckt: received packet
+//      - fileid: assoiated with fname
 //      - fname: intended file name
 //      - tmpname: temporary file name
 //
@@ -146,10 +147,11 @@ void usage(char *progname, int exitCode) {
 
 Packet checkResults(
     const Packet &ipckt,
+    int fileid,
     const char *fname,
     const char *tmpname
 ) {
-    Packet opckt(NULL_FILEID, CHECK_FL | FIN_FL, NULL_SEQNO, NULL, 0);
+    Packet opckt(fileid, CHECK_FL | FIN_FL, NULL_SEQNO, NULL, 0);
 
     if ((ipckt.flags & POS_FL) && rename(tmpname, fname) != 0) {
         c150debug->printf(
@@ -260,7 +262,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             fhandler = FileHandler(tmpname, fileNastiness);
 
             opckt = Packet(
-                ++fileid, ipckt.flags | POS_FL, NULL_SEQNO,
+                ++fileid, ipckt.flags | NEG_FL, NULL_SEQNO,
                 (const char *)fhandler.getHash(), HASH_LEN
             );
 
@@ -281,7 +283,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             );
 
             state = FIN_ST;
-            opckt = checkResults(ipckt, fname.c_str(), tmpname.c_str());
+            opckt = checkResults(ipckt, fileid, fname.c_str(), tmpname.c_str());
 
         } else {
             // default, return error to client
@@ -290,6 +292,12 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
         if (opckt.flags != NEG_FL) // cache packets if nonerror
             cache.insert(pair<Packet, Packet>(ipckt, opckt));
+        c150debug->printf(
+            C150APPLICATION,
+            "run: Sending response with fileid=%d, flags=%x, seqno=%d, "
+            "datalen=%d",
+            opckt.fileid, opckt.flags & 0xff, opckt.seqno, opckt.datalen
+        );
         writePacket(sock, &opckt);
     }
 }

@@ -252,22 +252,62 @@ bool checkFile(string fname, const char *hash, int nastiness) {
 //
 //  args:
 //      - sock: socket
-//      - ipcktp: location to put incoming packet from server
 //      - fileid: id for file negotiated with server
 //      - result: whether the check passed or not
 //
 //  result:
-//      - length of data read if successful
+//      - 0, server successfully renamed/removed file
 //      - -1 if timed out
+//      - -2 if server failed to rename/remove
 
-ssize_t sendCheckResult(
-    C150DgmSocket *sock, Packet *ipcktp,
-    int fileid, bool result
-) {
+int sendCheckResult(C150DgmSocket *sock, int fileid, bool result) {
     FLAG resFlag = result ? POS_FL : NEG_FL;
+    Packet ipckt;
     Packet opckt(fileid, CHECK_FL | resFlag, NULL_SEQNO, NULL, 0);
     PacketExpect expect = { fileid, CHECK_FL | FIN_FL };
-    return writePacketWithRetries(sock, &opckt, ipcktp, expect, MAX_TRIES);
+    ssize_t datalen;
+
+    c150debug->printf(
+        C150APPLICATION,
+        "sendCheckResult: Sending result=%s",
+        result ? "passed" : "failed"
+    );
+    datalen = writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES);
+
+    if (datalen < 0) {
+        return -1;
+    } else if (ipckt.flags & NEG_FL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendCheckResult: Server failed to %s file",
+            result ? "rename" : "remove"
+        );
+        return -2;
+    } else {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendCheckResult: Server successfully %s file",
+            result ? "renamed" : "removed"
+        );
+        return 0;
+    }
+}
+
+
+// ==========
+// FINISH
+// ==========
+
+// sendFin
+//      - this is to tell the server it can cleanup. however, if this packet is
+//      - lossed, server will eventually timeout and cleanup anyway, so no need 
+//      - to resend.
+
+void sendFin(C150DgmSocket *sock, int fileid) {
+    Packet opckt(fileid, FIN_FL, NULL_SEQNO, NULL, 0);
+
+    c150debug->printf(C150APPLICATION, "sendFin: Sending final FIN");
+    writePacket(sock, &opckt);
 }
 
 
@@ -299,7 +339,8 @@ CopyResult sendFile(
     C150DgmSocket *sock, 
     string dir, string fname, int fileNastiness
 ) {
-    CopyResult retval = SUCCESS;
+    CopyResult retval = SUCCESS; // sendFile return value
+    int sendVal; // for results of sending packets at each stage
 
     // file vars
     string fullname = makeFileName(dir, fname);
@@ -335,18 +376,16 @@ CopyResult sendFile(
 
     // send check result
     bool checkResult = checkFile(fullname, ipckt.data, fileNastiness);
-    if (sendCheckResult(sock, &ipckt, fileid, checkResult) < 0) {
+    sendVal = sendCheckResult(sock, fileid, checkResult);
+
+    if (sendVal == -1) {
         return TIMEOUT;
-    } else if (ipckt.flags & NEG_FL) { // server failed to rename/remove
+    } else if (sendVal == -2) { // server failed to rename/remove
         retval = SERVER_CLEANUP_ERROR;
     }
 
     // send final fin
-    // this is to tell the server it can cleanup. however, if this packet is
-    // lossed, server will eventually timeout and cleanup anyway, so no need 
-    // to resend.
-    opckt = Packet(fileid, FIN_FL, NULL_SEQNO, NULL, 0);
-    writePacket(sock, &opckt);
+    sendFin(sock, fileid);
 
     return retval;
 }

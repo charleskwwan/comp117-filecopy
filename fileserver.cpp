@@ -29,6 +29,7 @@ using namespace C150NETWORK; // for all comp150 utils
 // constants
 const int GIVEUP_TIMEOUT = 10000; // 10s, time until server gives up
 const Packet ERROR_PCKT(NULL_FILEID, NEG_FL, NULL_SEQNO, NULL, 0);
+const char *TMP_SUFFIX = ".TMP";
 
 
 // fwd declarations
@@ -130,6 +131,50 @@ void usage(char *progname, int exitCode) {
 }
 
 
+// ==========
+// CHECKING
+// ==========
+
+// fillCheckRequest
+//      - computes and packages a hash to fill a check request
+//
+//  args:
+//      - fileid: associated with file to check
+//      - fname: full file name to check
+//      - nastiness: with which to read file
+//
+//  return:
+//      - packet to be sent back to client
+//      - if file does not exist, error packet is returned
+//
+//  notes:
+//      - file is assumed to exist
+
+Packet fillCheckRequest(int fileid, string fname, int nastiness) {
+    FileHandler fhandler(fname, nastiness);
+
+    if (fhandler.getFile() == NULL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "fillCheckRequest: File fname=%s could not be opened",
+            fname.c_str()
+        );
+        return Packet(fileid, REQ_FL | CHECK_FL | NEG_FL, NULL_SEQNO, NULL, 0);
+
+    } else {
+        c150debug->printf(
+            C150APPLICATION,
+            "fillCheckRequest: Hash=[%s] computed for fname=%s",
+            hashToString(fhandler.getHash()).c_str(), fname.c_str()
+        );
+        return Packet(
+            fileid, REQ_FL | CHECK_FL | POS_FL, NULL_SEQNO,
+            (const char *)fhandler.getHash(), HASH_LEN
+        );
+    }
+}
+
+
 // checkResults
 //      - checks the results of an e2e check by client
 //
@@ -156,7 +201,7 @@ Packet checkResults(
     if ((ipckt.flags & POS_FL) && rename(tmpname, fname) != 0) {
         c150debug->printf(
             C150APPLICATION,
-            "run: '%s' could not be renamed to '%s'",
+            "checkResults: '%s' could not be renamed to '%s'",
             tmpname, fname
         );
         opckt.flags |= NEG_FL;
@@ -164,7 +209,7 @@ Packet checkResults(
     } else if ((ipckt.flags & NEG_FL) && remove(tmpname) != 0) {
         c150debug->printf(
             C150APPLICATION,
-            "run: '%s' could not be removed",
+            "checkResults: '%s' could not be removed",
             tmpname
         );
         opckt.flags |= NEG_FL;
@@ -176,6 +221,10 @@ Packet checkResults(
     return opckt;
 }
 
+
+// ==========
+// RUN
+// ==========
 
 // run
 //      - runs the main server loop
@@ -205,7 +254,6 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     State state = IDLE_ST; // waiting
 
     // file vars
-    FileHandler fhandler(fileNastiness);
     string dirname(targetDir);
     string fname, tmpname;
     // size_t filelen; 
@@ -255,16 +303,10 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 fileid, ipckt.data
             );
 
-            state = CHECK_ST;
             fname = makeFileName(dirname, ipckt.data);
-            tmpname = fname + ".TMP";
-            // file assumed to exist
-            fhandler = FileHandler(tmpname, fileNastiness);
-
-            opckt = Packet(
-                ++fileid, ipckt.flags | NEG_FL, NULL_SEQNO,
-                (const char *)fhandler.getHash(), HASH_LEN
-            );
+            tmpname = fname + TMP_SUFFIX;
+            opckt = fillCheckRequest(++fileid, tmpname, fileNastiness);
+            state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
 
         } else if (state != IDLE_ST && ipckt.fileid != fileid) {
             // server in transfer, but wrong fileid 
@@ -277,9 +319,8 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             // server ready for check results, pos/neg set
             c150debug->printf(
                 C150APPLICATION,
-                "run: Check results for fileid=%d received, will rename/"
-                "remove",
-                fileid
+                "run: Check results for fileid=%d received, will %s",
+                fileid, ipckt.flags & POS_FL ? "rename" : "remove"
             );
 
             state = FIN_ST;

@@ -230,6 +230,14 @@ ssize_t writePacketWithRetries(
 
 bool checkFile(string fname, const char *hash, int nastiness) {
     FileHandler fhandler(fname, nastiness);
+
+    c150debug->printf(
+        C150APPLICATION,
+        "checkFile: Hash=[%s] computed for fname=%s, against server hash=[%s]",
+        hashToString(fhandler.getHash()).c_str(), fname.c_str(),
+            hashToString((const unsigned char *)hash).c_str()
+    );
+
     return fhandler.getFile() != NULL &&
            strncmp((const char *)fhandler.getHash(), hash, HASH_LEN) == 0;
 }

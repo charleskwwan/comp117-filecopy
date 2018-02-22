@@ -34,7 +34,7 @@ const int MAX_TRIES = 5;
 
 // fwd declarations
 void usage(char *progname, int exitCode);
-void sendFile(C150DgmSocket *sock, string dir, string fname, int fileNastiness);
+int sendFile(C150DgmSocket *sock, string dir, string fname, int fileNastiness);
 
 
 // cmd line args
@@ -52,7 +52,7 @@ const int srcDirArg = 4;
 // ==========
 
 int main(int argc, char *argv[]) {
-
+    string dir;
     int netNastiness;
     int fileNastiness;
 
@@ -74,13 +74,12 @@ int main(int argc, char *argv[]) {
     }
 
     // check target directory
-    if (!isDir(argv[srcDirArg])) {
-        usage(argv[0], 8);
-    }
+    dir = argv[srcDirArg];
+    if (!isDir(dir.c_str())) usage(argv[0], 8);
 
     // debugging
-    initDebugLog("fileclientdebug.txt", argv[0]);
-    // initDebugLog(NULL, argv[0]);
+    // initDebugLog("fileclientdebug.txt", argv[0]);
+    initDebugLog(NULL, argv[0]);
 
     try {
         // create socket
@@ -96,13 +95,8 @@ int main(int argc, char *argv[]) {
 
         c150debug->printf(C150APPLICATION, "Ready to send messages");
 
-
         // temp
-        Packet pckt(23, REQ_FL, 40, "hello world!", 13);
-        cout << "fileid: " << pckt.fileid << endl
-             << "seqno: " << pckt.seqno << endl
-             << "data: " << pckt.data << endl;
-        writePacket(sock, &pckt);
+        sendFile(sock, dir, "data1", fileNastiness);
 
         // clean up socket
         delete sock;
@@ -110,7 +104,7 @@ int main(int argc, char *argv[]) {
         // write to debug log
         c150debug->printf(
             C150ALWAYSLOG,
-            "Caught C150NetworkException: %s\n",
+            "Caught C150NetworkException: %s",
             e.formattedExplanation().c_str()
         );
         // in case logging to file, write to console too
@@ -161,7 +155,7 @@ ssize_t readExpectedPacket(
 
     do {
         datalen = readPacket(sock, &tmp);
-    } while (datalen >= 0 && !isExpected(&tmp, expect));
+    } while (datalen >= 0 && !isExpected(tmp, expect));
 
     if (datalen != -1) *pcktp = tmp; // return packet to caller
     return datalen;
@@ -189,14 +183,14 @@ ssize_t writePacketWithRetries(
     Packet *ipcktp, PacketExpect expect,
     int tries
 ) {
-    ssize_t readlen;
+    ssize_t datalen;
     do {
         writePacket(sock, opcktp);
-        readlen = readExpectedPacket(sock, ipcktp, expect);
+        datalen = readExpectedPacket(sock, ipcktp, expect);
         tries--;
-    } while (tries > 0 && readlen < 0);
+    } while (tries > 0 && datalen < 0);
 
-    return readlen;
+    return datalen;
 }
 
 
@@ -209,7 +203,9 @@ ssize_t writePacketWithRetries(
 //      - fname: name of file
 //      - fileNastiness: nastiness with which to send file
 //
-//  return: n/a
+//  return:
+//      - 0 if successful
+//      - -1 if file could not be loaded
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -218,17 +214,40 @@ ssize_t writePacketWithRetries(
 //  NEEDSWORK: add logs for grading
 //  NEEDSWORK: implement filecopy, currently only does end to end checking
 
-void sendFile(
+int sendFile(
     C150DgmSocket *sock,
     string dir,
     string fname,
     int fileNastiness
 ) {
-    string fullFname = makeFileName(dir, fname);
-    FileHandler fhandler(fullFname, fileNastiness);
+    // file vars
+    string fullname = makeFileName(dir, fname);
+    FileHandler fhandler(fullname, fileNastiness);
+
+    // network vars
+    Packet ipckt, opckt;
+    PacketExpect expect;
+    // int fileid;
 
     // check if file was successfully loaded
-    if (fhandler.getFile() == NULL) return; 
+    if (fhandler.getFile() == NULL) return -1;
 
+    // send check request
+    opckt = Packet(
+        NULL_FILEID, REQ_FL | CHECK_FL, NULL_SEQNO,
+        fname.c_str(), fname.length()+1 // +1 for null term
+    );
+    expect.fileid = NULL_FILEID;
+    expect.flags = REQ_FL | CHECK_FL;
+    if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendFile: Check request for fileid=%d timed out"
+        );
+    }
 
+    printPacket(ipckt, stdout);
+    printHash((const unsigned char *)ipckt.data, stdout);
+
+    return 0;
 }

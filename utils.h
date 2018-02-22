@@ -33,6 +33,8 @@ enum State {
 // functions
 int safeAtoi(const char *str, int *ip); // atoi with error checking
 void initDebugLog(const char *logname, const char *progname);
+void printPacket(Packet &pckt, FILE *fp);
+void printHash(const unsigned char *hash, FILE *fp);
 
 
 // ==========
@@ -54,7 +56,7 @@ struct PacketExpect {
 // functions
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp);
 void writePacket(C150DgmSocket *sock, const Packet *pcktp);
-bool isExpected(Packet *pcktp, PacketExpect expect);
+bool isExpected(const Packet &pckt, PacketExpect expect);
 
 
 // ==========
@@ -68,38 +70,6 @@ bool isDir(string dirname);
 bool isFile(string fname);
 string makeFileName(string dirname, string fname); // make dirname/fname
 ssize_t getFileSize(string fname);
-
-
-// hashFile
-//      - computes sha1 hash for a given file
-//
-//  args:
-//      - fname: name of file
-//
-//  returns:
-//      - hash as string if successful
-//      - '\0' if file is invalid
-//
-//  NEEDSWORK (maybe): do we need to go through NASTYFILE?
-
-// string hashFile(string fname) {
-//     if (!isFile(fname)) return '\0'; // verify file
-
-//     ifstream *t = new ifstream(fname.c_str());
-//     stringstream *buffer = new stringstream;
-//     unsigned char obuf[20];
-
-//     *buffer << t->rdbuf();
-//     SHA1(
-//         (const unsigned char *)buffer->str().c_str(),
-//         (buffer->str()).length(),
-//         obuf
-//     );
-
-//     delete t;
-//     delete buffer;
-//     return string((char *)obuf);
-// }
 
 
 #endif

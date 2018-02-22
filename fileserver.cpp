@@ -27,6 +27,8 @@ using namespace C150NETWORK; // for all comp150 utils
 
 
 // constants
+const int GIVEUP_TIMEOUT = 10000; // 10s, time until server gives up
+const Packet ERROR_PCKT(NULL_FILEID, NEG_FL, NULL_SEQNO, NULL, 0);
 
 
 // fwd declarations
@@ -75,7 +77,8 @@ int main(int argc, char *argv[]) {
     }
 
     // debugging
-    initDebugLog("fileserverdebug.txt", argv[0]);
+    // initDebugLog("fileserverdebug.txt", argv[0]);
+    initDebugLog(NULL, argv[0]);
     c150debug->setIndent("    "); // if merge client/server logs, server stuff
                                   // will be indented
 
@@ -87,24 +90,16 @@ int main(int argc, char *argv[]) {
             netNastiness
         );
         C150DgmSocket *sock = new C150NastyDgmSocket(netNastiness);
-
-        sock -> turnOffTimeouts(); // server always waits, never initiates
-
+        sock -> turnOnTimeouts(GIVEUP_TIMEOUT); // on timeout, give up
         c150debug->printf(C150APPLICATION, "Ready to accept messages");
 
-        // temp
-        Packet pckt;
-        size_t readlen = readPacket(sock, &pckt); // pckt always null terminated by read
-        cout << "readlen: " << readlen << endl
-             << "fileid: " << pckt.fileid << endl
-             << "seqno: " << pckt.seqno << endl
-             << "data: " << pckt.data << endl;
+        run(sock, argv[targetDirArg], fileNastiness);
 
     } catch (C150NetworkException e) {
         // write to debug log
         c150debug->printf(
             C150ALWAYSLOG,
-            "Caught C150NetworkException: %s\n",
+            "Caught C150NetworkException: %s",
             e.formattedExplanation().c_str()
         );
         // in case logging to file, write to console too
@@ -129,6 +124,51 @@ void usage(char *progname, int exitCode) {
         progname
     );
     exit(exitCode);
+}
+
+
+// checkResults
+//      - checks the results of an e2e check by client
+//
+//  args:
+//      - ipckt: received packet
+//      - fname: intended file name
+//      - tmpname: temporary file name
+//
+//  returns:
+//      - packet to be sent back to client
+//
+//  notes:
+//      - ipckt's flags are assumed to be: CHECK_FL | (POS_FL xor NEG_FL)
+
+Packet checkResults(
+    const Packet &ipckt,
+    const char *fname,
+    const char *tmpname
+) {
+    Packet opckt(NULL_FILEID, CHECK_FL | FIN_FL, NULL_SEQNO, NULL, 0);
+
+    if ((ipckt.flags & POS_FL) && rename(tmpname, fname) != 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "run: '%s' could not be renamed to '%s'",
+            tmpname, fname
+        );
+        opckt.flags |= NEG_FL;
+
+    } else if ((ipckt.flags & NEG_FL) && remove(tmpname) != 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "run: '%s' could not be removed",
+            tmpname
+        );
+        opckt.flags |= NEG_FL;
+
+    } else {
+        opckt.flags |= POS_FL; // rename or remove successful
+    }
+    
+    return opckt;
 }
 
 
@@ -162,89 +202,79 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     // file vars
     FileHandler fhandler(fileNastiness);
     string dirname(targetDir);
-    string fullFname;
-    string tmpFname;
+    string fname, tmpname;
     // size_t filelen; 
 
     // network vars
-    Packet pckt;
-    map<int, Packet> cache; // keys = seqno, NULL_SEQNO for last nonerror pckt
+    Packet ipckt, opckt; // incoming, outgoing
+    ssize_t datalen;
+    map<Packet, Packet> cache; // map packet received to response sent
     int fileid = NULL_FILEID; // for new id, increment
 
     // main loop
     while (1) {
-        if (readPacket(sock, &pckt) < 0) {
-            // time out should be impossible, but incl anyway
-            c150debug->printf(C150APPLICATION, "run: Server read timed out\n");
-            continue; 
+        datalen = readPacket(sock, &ipckt);
 
-        } else if (state == IDLE_ST && pckt.flags == (REQ_FL | CHECK_FL)) {
-            // server idle, respond yes to request
-            state = CHECK_ST;
-
-            fullFname = makeFileName(dirname, string(pckt.data));
-            tmpFname = fullFname + ".TMP";
-            fhandler.setName(tmpFname); // file assumed to exist, will
-                                        // automatically read
-
-            pckt.flags = pckt.flags | POS_FL;
-            pckt.fileid = ++fileid; // new fileid
-            pckt.seqno = NULL_SEQNO;
-            pckt.datalen = HASH_LEN;
-            strncpy(pckt.data, (const char *)fhandler.getHash(), HASH_LEN);
-
-        } else if (state != IDLE_ST && pckt.fileid != fileid) {
-            // server in transfer, but wrong fileid 
-            pckt.flags = NEG_FL;
-            pckt.datalen = 0;
-
-        } else if (state == CHECK_ST &&
-                   (pckt.flags & (CHECK_FL | POS_FL | NEG_FL))) {
-            // server ready for check results, pos/neg set
-            state = FIN_ST;
-
-            pckt.flags = CHECK_FL | FIN_FL;
-            pckt.seqno = NULL_SEQNO;
-            pckt.datalen = 0;
-
-            if ((pckt.flags & POS_FL) &&
-                rename(tmpFname.c_str(), fullFname.c_str()) != 0) {
-                c150debug->printf(
-                    C150APPLICATION,
-                    "run: '%s' could not be renamed to '%s'\n",
-                    tmpFname.c_str(), fullFname.c_str()
-                );
-                pckt.flags |= NEG_FL;
-
-            } else if ((pckt.flags & NEG_FL) && remove(tmpFname.c_str()) != 0) {
-                c150debug->printf(
-                    C150APPLICATION,
-                    "run: '%s' could not be removed\n",
-                    tmpFname.c_str()
-                );
-                pckt.flags |= NEG_FL;
-
-            } else {
-                pckt.flags |= POS_FL; // rename or remove successful
-            }
-
-        } else if (state == FIN_ST && pckt.flags == FIN_FL) {
+        if (datalen < 0 || (state == FIN_ST && ipckt.flags == FIN_FL)) {
+            // server timed out, in which case client gave up so reset OR
             // client received final message, can complete request now
-            state = IDLE_ST;
+            if (state != FIN_ST && state != IDLE_ST) // timeout mid-transfer
+                c150debug->printf(
+                    C150APPLICATION,
+                    "run: Server timed out mid-transfer, client gave up"
+                );
 
-            fullFname.clear();
-            tmpFname.clear();
+            state = IDLE_ST;
+            fname.clear();
+            tmpname.clear();
+            cache.clear(); // only cache for current transfer, now done
 
             continue; // no response needed
 
+        } else if (cache.count(ipckt)) {
+            // previously sent packet received again, and still in current
+            // session. assume due to retry and send reply the same way
+            opckt = cache[ipckt];
+
+        } else if (state == IDLE_ST && ipckt.flags == (REQ_FL | CHECK_FL)) {
+            // server idle, respond yes to request
+            c150debug->printf(
+                C150APPLICATION,
+                "run: Check request received for fileid=%d, fname=%s",
+                fileid, ipckt.data
+            );
+
+            state = CHECK_ST;
+            fname = makeFileName(dirname, ipckt.data);
+            tmpname = fname + ".TMP";
+            // file assumed to exist
+            fhandler = FileHandler(tmpname, fileNastiness);
+
+            opckt = Packet(
+                ++fileid, ipckt.flags | POS_FL, NULL_SEQNO,
+                (const char *)fhandler.getHash(), HASH_LEN
+            );
+            printHash(fhandler.getHash(), stdout);
+
+        } else if (state != IDLE_ST && ipckt.fileid != fileid) {
+            // server in transfer, but wrong fileid 
+            opckt = ERROR_PCKT;
+            opckt.fileid = ipckt.fileid; // tell client wrong id
+
+        } else if (state == CHECK_ST &&
+                   (ipckt.flags == (CHECK_FL | POS_FL) ||
+                    ipckt.flags == (CHECK_FL | NEG_FL))) {
+            // server ready for check results, pos/neg set
+            state = FIN_ST;
+            opckt = checkResults(ipckt, fname.c_str(), tmpname.c_str());
+
         } else {
             // default, return error to client
-            pckt.flags = NEG_FL;
-            pckt.datalen = 0;
+            opckt = ERROR_PCKT;
         }
 
-        if (pckt.flags != NEG_FL) // cache last packet if nonerror
-            cache.insert(pair<int, Packet>(pckt.seqno, pckt));
-        writePacket(sock, &pckt);
+        if (opckt.flags != NEG_FL) // cache packets if nonerror
+            cache.insert(pair<Packet, Packet>(ipckt, opckt));
+        writePacket(sock, &opckt);
     }
 }

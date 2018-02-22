@@ -11,7 +11,7 @@
 
 
 // constants
-const size_t HASH_LEN = 20;
+const unsigned short HASH_LEN = 20;
 
 
 // ==========

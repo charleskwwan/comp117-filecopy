@@ -12,7 +12,10 @@
 #include <cstring>
 #include <algorithm> // std::min
 
+#include "c150dgmsocket.h" // for MAXDGMSIZE
+
 using namespace std;
+using namespace C150NETWORK; // for all comp150 utils
 
 
 // typedefs
@@ -21,7 +24,7 @@ typedef char FLAG;
 
 // constants 
 const unsigned short HDR_LEN = 2 * sizeof(int) + sizeof(FLAG) + sizeof(short);
-const unsigned short MAX_DATA_LEN = 512 - HDR_LEN;
+const unsigned short MAX_DATA_LEN = MAXDGMSIZE - HDR_LEN;
 const unsigned short MAX_WRITE_LEN = MAX_DATA_LEN - 1; // reserve 1 for null
                                                        // terminator
 const unsigned short MAX_PCKT_LEN = HDR_LEN + MAX_WRITE_LEN;
@@ -63,14 +66,51 @@ struct __attribute__((__packed__)) Packet {
 
     Packet(
         int _fileid, FLAG _flags, int _seqno,
-        const char *_data, unsigned short datalen
+        const char *_data, unsigned short _datalen
     ) {
         fileid = _fileid;
         flags = _flags;
         seqno = _seqno;
 
-        datalen = min(datalen, MAX_WRITE_LEN);
-        strncpy(data, _data, datalen);
+        if (_data == NULL || _datalen == 0) {
+            datalen = 0;
+        } else {
+            datalen = min(_datalen, MAX_WRITE_LEN);
+            strncpy(data, _data, datalen);
+        }
+    }
+
+
+    bool const operator==(const Packet &other) const {
+        return fileid == other.fileid &&
+               flags == other.flags &&
+               seqno == other.seqno &&
+               datalen == other.datalen &&
+               strncmp(data, other.data, datalen) == 0;
+    }
+
+
+    // checks members in priority level
+    //      - in each case, < and > are checked, as they clearly define a result
+    //      - if ==, continue to next members as they might decide
+
+    bool const operator<(const Packet &o) const {
+        if (fileid < o.fileid) return true;
+        if (fileid > o.fileid) return false;
+
+        if (seqno < o.seqno) return true;
+        if (seqno > o.seqno) return false;
+
+        if (datalen < o.datalen) return true;
+        if (datalen > o.datalen) return false;
+
+        int cmpval = strncmp(data, o.data, datalen);
+        if (cmpval < 0) return true;
+        if (cmpval > 0) return false;
+
+        if (flags < o.flags) return true;
+        
+        return false;
     }
 };
 

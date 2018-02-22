@@ -32,6 +32,8 @@ using namespace C150NETWORK; // for all comp150 utils
 
 void FileHandler::cleanup() {
     if (buf != NULL) delete [] buf;
+    buf = NULL;
+    buflen = 0;
 }
 
 
@@ -50,8 +52,6 @@ void FileHandler::cleanup() {
 int FileHandler::read() {
     // reset buf and buflen
     cleanup();
-    buf = NULL;
-    buflen = 0;
 
     // check file is valid
     if (!isFile(fname)) return -1;
@@ -132,6 +132,7 @@ FileHandler::FileHandler(int _nastiness) {
 FileHandler::FileHandler(string _fname, int _nastiness) {
     setName(_fname);
     nastiness = _nastiness;
+    buf = NULL; // avoid double free error
     read(); // set buf, buflen
     setHash(); // set hash
 }

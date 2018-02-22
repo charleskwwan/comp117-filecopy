@@ -77,6 +77,30 @@ void initDebugLog(const char *logname, const char *progname) {
 }
 
 
+// prints a packet to a given stream
+
+void printPacket(Packet &pckt, FILE *fp) {
+    fprintf(
+        fp,
+        "Printing packet:\n"
+        "   fileid: %d\n"
+        "   flags: %x\n"
+        "   seqno: %d\n"
+        "   datalen: %d\n",
+        pckt.fileid, pckt.flags & 0xff, pckt.seqno, pckt.datalen
+    );
+}
+
+
+// prints sha1 hash in hex
+
+void printHash(const unsigned char *hash, FILE *fp) {
+    fprintf(fp, "Printing hash: ");
+    for (int i = 0; i < 20; i++)
+        fprintf(fp, "%02x", (unsigned int)hash[i]);
+    fprintf(fp, "\n");
+}
+
 // ==========
 // 
 // NETWORK
@@ -133,11 +157,12 @@ void writePacket(C150DgmSocket *sock, const Packet *pcktp) {
 
 
 // checks if a packet is expected
-//      - use Packet* instead of Packet since packets are pretty big
+//      - flag checks to see if flags were set, but does not preclude other
+//        flags from being set
 
-bool isExpected(Packet *pcktp, PacketExpect expect) {
-    return (expect.fileid == pcktp->fileid || expect.fileid == NULL_FILEID) &&
-           (expect.flags & pcktp->flags) == expect.flags;
+bool isExpected(const Packet &pckt, PacketExpect expect) {
+    return (expect.fileid == pckt.fileid || expect.fileid == NULL_FILEID) &&
+           (expect.flags & pckt.flags) == expect.flags;
 }
 
 
@@ -155,7 +180,7 @@ bool isDir(string dirname) {
     if (lstat(dirname.c_str(), &statbuf) != 0) {
         c150debug->printf(
             C150APPLICATION,
-            "isDir: Directory '%s' does not exist\n",
+            "isDir: Directory '%s' does not exist",
             dirname.c_str()
         );
         return false;
@@ -164,7 +189,7 @@ bool isDir(string dirname) {
     if (!S_ISDIR(statbuf.st_mode)) {
         c150debug->printf(
             C150APPLICATION,
-            "isDir: File '%s' exists but is not a directory\n",
+            "isDir: File '%s' exists but is not a directory",
             dirname.c_str()
         );
         return false;
@@ -174,7 +199,7 @@ bool isDir(string dirname) {
     if (dir == NULL) {
         c150debug->printf(
             C150APPLICATION,
-            "isDir: Directory '%s' could not be opened\n",
+            "isDir: Directory '%s' could not be opened",
             dirname.c_str()
         );
         return false;
@@ -192,7 +217,7 @@ bool isFile(string fname) {
     if (lstat(fname.c_str(), &statbuf) != 0) {
         c150debug->printf(
             C150APPLICATION,
-            "isFile: File '%s' does not exist\n",
+            "isFile: File '%s' does not exist",
             fname.c_str()
         );
         return false;
@@ -200,7 +225,7 @@ bool isFile(string fname) {
     if (!S_ISREG(statbuf.st_mode)) {
         c150debug->printf(
             C150APPLICATION,
-            "isFile: File '%s' exists but is not a regular file\n",
+            "isFile: File '%s' exists but is not a regular file",
             fname.c_str()
         );
         return false;

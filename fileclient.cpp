@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <dirent.h>
 
 #include "c150nastydgmsocket.h"
 #include "c150grading.h"
@@ -28,18 +29,6 @@ using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
 
 
-// CopyResult enum
-//      - for result of a file send
-
-enum CopyResult {
-    SUCCESS,
-    TIMEOUT,
-    FILE_CHECK_DENIED, // server rejected file check request
-    FILE_READ_ERROR, // file could not be loaded
-    SERVER_CLEANUP_ERROR // server could rename/remove
-};
-
-
 // constants
 const int TIMEOUT_DURATION = 1000; // 1 second
 const int MAX_TRIES = 5;
@@ -47,10 +36,8 @@ const int MAX_TRIES = 5;
 
 // fwd declarations
 void usage(char *progname, int exitCode);
-CopyResult sendFile(
-    C150DgmSocket *sock, 
-    string dir, string fname, int fileNastiness
-);
+int sendFile(C150DgmSocket *sock, string dir, string fname, int fileNastiness);
+void sendDir(C150DgmSocket *sock, string dir, int fileNastiness);
 
 
 // cmd line args
@@ -116,6 +103,7 @@ int main(int argc, char *argv[]) {
 
         // temp
         sendFile(sock, dir, "data1", fileNastiness);
+        // sendDir(sock, dir, fileNastiness);
 
         // clean up socket
         delete sock;
@@ -325,7 +313,11 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //      - fileNastiness: nastiness with which to send file
 //
 //  return:
-//      - copy result, see CopyResult enum
+//      - 0, success
+//      - -1, timeout
+//      - -2, file check denied
+//      - -3, file read error
+//      - -4, server cleanup error (could not rename/remove)
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -335,11 +327,11 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //  NEEDSWORK: implement filecopy, currently only does end to end checking
 //  NEEDSWORK: once filecopy implemented, move check req to own function
 
-CopyResult sendFile(
+int sendFile(
     C150DgmSocket *sock, 
     string dir, string fname, int fileNastiness
 ) {
-    CopyResult retval = SUCCESS; // sendFile return value
+    int retval = 0; // sendFile return value
     int sendVal; // for results of sending packets at each stage
 
     // file vars
@@ -352,7 +344,14 @@ CopyResult sendFile(
     int fileid;
 
     // check if file was successfully loaded
-    if (fhandler.getFile() == NULL) return FILE_READ_ERROR;
+    if (fhandler.getFile() == NULL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendFile: File %s could not be loaded. Skipping...",
+            fullname.c_str()
+        );
+        return -3;
+    }
 
     // send check request
     opckt = Packet(
@@ -362,14 +361,14 @@ CopyResult sendFile(
     expect.fileid = NULL_FILEID;
     expect.flags = REQ_FL | CHECK_FL;
     if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
-        return TIMEOUT;
+        return -1;
     } else if (ipckt.flags & NEG_FL) {
         c150debug->printf(
             C150APPLICATION,
             "sendFile: Check request for fname=%s denied",
             fullname.c_str()
         );
-        return FILE_CHECK_DENIED;
+        return -2;
     } else if (ipckt.flags & POS_FL) {
         fileid = ipckt.fileid;
     }
@@ -379,13 +378,69 @@ CopyResult sendFile(
     sendVal = sendCheckResult(sock, fileid, checkResult);
 
     if (sendVal == -1) {
-        return TIMEOUT;
+        return -1;
     } else if (sendVal == -2) { // server failed to rename/remove
-        retval = SERVER_CLEANUP_ERROR;
+        retval = -4;
     }
 
     // send final fin
     sendFin(sock, fileid);
 
     return retval;
+}
+
+
+// sendDir
+//      - sends an entire directory to server
+//      - subdirectories are skipped
+//
+//  args:
+//      - sock: socket
+//      - dir: name of directory
+//      - fileNastiness: with which to send files
+//
+//  returns: n/a
+//
+//  notes:
+//      - if file send fails, just move on to next file
+//
+//  NEEDSWORK: add retry mechanism for failed files
+
+void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
+    // check to make sure directory can be opened
+    if (!isDir(dirname)) {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendDir: Directory '%s' could not be opened",
+            dirname.c_str()
+        );
+        return;
+    }
+
+    DIR *dir = opendir(dirname.c_str()); // will succeed since checked
+    struct dirent *srcFile; // directory entry for source file
+
+    // loop thru all files, and send all valid nondir files
+    while ((srcFile = readdir(dir)) != NULL) {
+        // skip . and ..
+        if (strcmp(srcFile->d_name, ".") == 0 ||
+            strcmp(srcFile->d_name, "..") == 0) {
+            continue;
+        } else if (isFile(srcFile->d_name)) {
+            c150debug->printf(
+                C150APPLICATION,
+                "sendDir: Sending file '%s'",
+                srcFile->d_name
+            );
+            sendFile(sock, dirname, srcFile->d_name, fileNastiness);
+        } else {
+            c150debug->printf(
+                C150APPLICATION,
+                "sendDir: Skipping subdirectory '%s'",
+                srcFile->d_name
+            );
+        }
+    }
+
+    closedir(dir);
 }

@@ -20,6 +20,9 @@ const unsigned short HASH_LEN = 20;
 //
 // ==========
 
+// NEEDSWORK: overload [] operator so allow in place writing and individual
+//            bytes access
+
 class FileHandler {
 public:
     FileHandler(int _nastiness);

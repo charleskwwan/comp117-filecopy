@@ -15,6 +15,7 @@
 
 
 #include <iostream>
+#include <cstring>
 
 #include "c150nastydgmsocket.h"
 #include "c150grading.h"
@@ -27,6 +28,18 @@ using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
 
 
+// CopyResult enum
+//      - for result of a file send
+
+enum CopyResult {
+    SUCCESS,
+    TIMEOUT,
+    FILE_CHECK_DENIED, // server rejected file check request
+    FILE_READ_ERROR, // file could not be loaded
+    SERVER_CLEANUP_ERROR // server could rename/remove
+};
+
+
 // constants
 const int TIMEOUT_DURATION = 1000; // 1 second
 const int MAX_TRIES = 5;
@@ -34,7 +47,10 @@ const int MAX_TRIES = 5;
 
 // fwd declarations
 void usage(char *progname, int exitCode);
-int sendFile(C150DgmSocket *sock, string dir, string fname, int fileNastiness);
+CopyResult sendFile(
+    C150DgmSocket *sock, 
+    string dir, string fname, int fileNastiness
+);
 
 
 // cmd line args
@@ -78,8 +94,11 @@ int main(int argc, char *argv[]) {
     if (!isDir(dir.c_str())) usage(argv[0], 8);
 
     // debugging
-    // initDebugLog("fileclientdebug.txt", argv[0]);
-    initDebugLog(NULL, argv[0]);
+    // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
+    //                         C150NETWORKDELIVERY | C150FILEDEBUG
+    uint32_t debugClasses = C150APPLICATION;
+    // initDebugLog("fileclientdebug.txt", argv[0], debugClasses);
+    initDebugLog(NULL, argv[0], debugClasses);
 
     try {
         // create socket
@@ -120,6 +139,10 @@ int main(int argc, char *argv[]) {
 // 
 // DEFS
 //
+// ==========
+
+// ==========
+// GENERAL
 // ==========
 
 // Prints command line usage to stderr and exits
@@ -194,6 +217,64 @@ ssize_t writePacketWithRetries(
 }
 
 
+// ==========
+// CHECKING
+// ==========
+
+// checkFile
+//      - checks a hash against a file, read from disk
+//
+//  args:
+//      - fname: full file name to check
+//      - hash: hash to check against
+//      - nastiness: with which to read file
+//
+//  return:
+//      - true, if passed
+//      - false, if failed
+//
+//  notes:
+//      - fname MUST be a file that exists. if not, checkFile will silently
+//        return false.
+//      - hash must not be null, and be a sha1 hash of length 20
+//
+//  NEEDSWORK: make checkFile better for higher nastiness levels
+
+bool checkFile(string fname, const char *hash, int nastiness) {
+    FileHandler fhandler(fname, nastiness);
+    return fhandler.getFile() != NULL &&
+           strncmp((const char *)fhandler.getHash(), hash, HASH_LEN) == 0;
+}
+
+
+// sendCheckResult
+//      - sends the result of the end2end to the server
+//
+//  args:
+//      - sock: socket
+//      - ipcktp: location to put incoming packet from server
+//      - fileid: id for file negotiated with server
+//      - result: whether the check passed or not
+//
+//  result:
+//      - length of data read if successful
+//      - -1 if timed out
+
+ssize_t sendCheckResult(
+    C150DgmSocket *sock, Packet *ipcktp,
+    int fileid, bool result
+) {
+    FLAG resFlag = result ? POS_FL : NEG_FL;
+    Packet opckt(fileid, CHECK_FL | resFlag, NULL_SEQNO, NULL, 0);
+    PacketExpect expect = { fileid, CHECK_FL | FIN_FL };
+    return writePacketWithRetries(sock, &opckt, ipcktp, expect, MAX_TRIES);
+}
+
+
+// ==========
+// SEND
+// ==========
+
 // sendFile
 //      - sends a file via a socket
 //
@@ -204,8 +285,7 @@ ssize_t writePacketWithRetries(
 //      - fileNastiness: nastiness with which to send file
 //
 //  return:
-//      - 0 if successful
-//      - -1 if file could not be loaded
+//      - copy result, see CopyResult enum
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -213,13 +293,14 @@ ssize_t writePacketWithRetries(
 //
 //  NEEDSWORK: add logs for grading
 //  NEEDSWORK: implement filecopy, currently only does end to end checking
+//  NEEDSWORK: once filecopy implemented, move check req to own function
 
-int sendFile(
-    C150DgmSocket *sock,
-    string dir,
-    string fname,
-    int fileNastiness
+CopyResult sendFile(
+    C150DgmSocket *sock, 
+    string dir, string fname, int fileNastiness
 ) {
+    CopyResult retval = SUCCESS;
+
     // file vars
     string fullname = makeFileName(dir, fname);
     FileHandler fhandler(fullname, fileNastiness);
@@ -227,10 +308,10 @@ int sendFile(
     // network vars
     Packet ipckt, opckt;
     PacketExpect expect;
-    // int fileid;
+    int fileid;
 
     // check if file was successfully loaded
-    if (fhandler.getFile() == NULL) return -1;
+    if (fhandler.getFile() == NULL) return FILE_READ_ERROR;
 
     // send check request
     opckt = Packet(
@@ -240,14 +321,32 @@ int sendFile(
     expect.fileid = NULL_FILEID;
     expect.flags = REQ_FL | CHECK_FL;
     if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
+        return TIMEOUT;
+    } else if (ipckt.flags & NEG_FL) {
         c150debug->printf(
             C150APPLICATION,
-            "sendFile: Check request for fileid=%d timed out"
+            "sendFile: Check request for fname=%s denied",
+            fullname.c_str()
         );
+        return FILE_CHECK_DENIED;
+    } else if (ipckt.flags & POS_FL) {
+        fileid = ipckt.fileid;
     }
 
-    printPacket(ipckt, stdout);
-    printHash((const unsigned char *)ipckt.data, stdout);
+    // send check result
+    bool checkResult = checkFile(fullname, ipckt.data, fileNastiness);
+    if (sendCheckResult(sock, &ipckt, fileid, checkResult) < 0) {
+        return TIMEOUT;
+    } else if (ipckt.flags & NEG_FL) { // server failed to rename/remove
+        retval = SERVER_CLEANUP_ERROR;
+    }
 
-    return 0;
+    // send final fin
+    // this is to tell the server it can cleanup. however, if this packet is
+    // lossed, server will eventually timeout and cleanup anyway, so no need 
+    // to resend.
+    opckt = Packet(fileid, FIN_FL, NULL_SEQNO, NULL, 0);
+    writePacket(sock, &opckt);
+
+    return retval;
 }

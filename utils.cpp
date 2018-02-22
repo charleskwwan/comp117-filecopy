@@ -55,10 +55,11 @@ int safeAtoi(const char *str, int *ip) {
 // args:
 //      - logname: name of log file; if NULL, defaults to console
 //      - progname: name of program
+//      - classes: for which to log
 //
 // returns: n/a
 
-void initDebugLog(const char *logname, const char *progname) {
+void initDebugLog(const char *logname, const char *progname, uint32_t classes) {
     if (logname != NULL) { // pipe logging to file
         ofstream *outstreamp = new ofstream(logname);
         DebugStream *filestreamp = new DebugStream(outstreamp);
@@ -68,12 +69,7 @@ void initDebugLog(const char *logname, const char *progname) {
     c150debug->setPrefix(progname);
     c150debug->enableTimestamp();
 
-    c150debug->enableLogging(
-        C150APPLICATION |
-        C150NETWORKTRAFFIC |
-        C150NETWORKDELIVERY |
-        C150FILEDEBUG
-    );
+    c150debug->enableLogging(classes);
 }
 
 
@@ -123,7 +119,7 @@ ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
     ssize_t readlen = sock -> read((char*)pcktp, MAX_PCKT_LEN);
 
     if (sock -> timedout()) {
-        // automatically logged to c150debug
+        c150debug->printf(C150APPLICATION, "readPacket: Timeout occurred");
         return -1;
     } else {
         pcktp->data[readlen - HDR_LEN + 1] = '\0'; // ensure null terminated

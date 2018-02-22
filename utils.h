@@ -32,7 +32,7 @@ enum State {
 
 // functions
 int safeAtoi(const char *str, int *ip); // atoi with error checking
-void initDebugLog(const char *logname, const char *progname);
+void initDebugLog(const char *logname, const char *progname, uint32_t classes);
 void printPacket(Packet &pckt, FILE *fp);
 void printHash(const unsigned char *hash, FILE *fp);
 

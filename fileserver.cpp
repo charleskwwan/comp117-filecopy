@@ -77,8 +77,11 @@ int main(int argc, char *argv[]) {
     }
 
     // debugging
-    // initDebugLog("fileserverdebug.txt", argv[0]);
-    initDebugLog(NULL, argv[0]);
+    // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
+    //                         C150NETWORKDELIVERY | C150FILEDEBUG
+    uint32_t debugClasses = C150APPLICATION;
+    // initDebugLog("fileclientdebug.txt", argv[0], debugClasses);
+    initDebugLog(NULL, argv[0], debugClasses);
     c150debug->setIndent("    "); // if merge client/server logs, server stuff
                                   // will be indented
 
@@ -218,11 +221,17 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         if (datalen < 0 || (state == FIN_ST && ipckt.flags == FIN_FL)) {
             // server timed out, in which case client gave up so reset OR
             // client received final message, can complete request now
-            if (state != FIN_ST && state != IDLE_ST) // timeout mid-transfer
+            if (state != FIN_ST && state != IDLE_ST) { // timeout mid-transfer
                 c150debug->printf(
                     C150APPLICATION,
                     "run: Server timed out mid-transfer, client gave up"
                 );
+            } else if (state == FIN_ST && ipckt.flags == FIN_FL) {
+                c150debug->printf(
+                    C150APPLICATION,
+                    "run: Final FIN received, cleaning up"
+                );
+            }
 
             state = IDLE_ST;
             fname.clear();
@@ -254,7 +263,6 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 ++fileid, ipckt.flags | POS_FL, NULL_SEQNO,
                 (const char *)fhandler.getHash(), HASH_LEN
             );
-            printHash(fhandler.getHash(), stdout);
 
         } else if (state != IDLE_ST && ipckt.fileid != fileid) {
             // server in transfer, but wrong fileid 
@@ -265,6 +273,13 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                    (ipckt.flags == (CHECK_FL | POS_FL) ||
                     ipckt.flags == (CHECK_FL | NEG_FL))) {
             // server ready for check results, pos/neg set
+            c150debug->printf(
+                C150APPLICATION,
+                "run: Check results for fileid=%d received, will rename/"
+                "remove",
+                fileid
+            );
+
             state = FIN_ST;
             opckt = checkResults(ipckt, fname.c_str(), tmpname.c_str());
 

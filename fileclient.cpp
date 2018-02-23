@@ -23,6 +23,7 @@
 #include "c150debug.h"
 
 #include "utils.h"
+#include "hash.h"
 #include "filehandler.h"
 
 using namespace std; // for C++ std lib
@@ -214,7 +215,7 @@ ssize_t writePacketWithRetries(
 //
 //  args:
 //      - fname: full file name to check
-//      - hash: hash to check against
+//      - testhash: hash to check against
 //      - nastiness: with which to read file
 //
 //  return:
@@ -224,22 +225,20 @@ ssize_t writePacketWithRetries(
 //  notes:
 //      - fname MUST be a file that exists. if not, checkFile will silently
 //        return false.
-//      - hash must not be null, and be a sha1 hash of length 20
 //
 //  NEEDSWORK: make checkFile better for higher nastiness levels
 
-bool checkFile(string fname, const char *hash, int nastiness) {
+bool checkFile(string fname, Hash testhash, int nastiness) {
     FileHandler fhandler(fname, nastiness);
+    Hash fhash(fhandler.getFile(), fhandler.getLength());
 
     c150debug->printf(
         C150APPLICATION,
         "checkFile: Hash=[%s] computed for fname=%s, against server hash=[%s]",
-        hashToString(fhandler.getHash()).c_str(), fname.c_str(),
-            hashToString((const unsigned char *)hash).c_str()
+        fhash.str().c_str(), fname.c_str(), testhash.str().c_str()
     );
 
-    return fhandler.getFile() != NULL &&
-           strncmp((const char *)fhandler.getHash(), hash, HASH_LEN) == 0;
+    return fhandler.getFile() != NULL && fhash == testhash;
 }
 
 
@@ -382,7 +381,7 @@ int sendFile(
     }
 
     // send check result
-    bool checkResult = checkFile(fullname, ipckt.data, fileNastiness);
+    bool checkResult = checkFile(fullname, Hash(ipckt.data), fileNastiness);
     sendVal = sendCheckResult(sock, fileid, checkResult);
 
     if (sendVal == -1) {

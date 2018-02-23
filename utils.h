@@ -34,7 +34,6 @@ enum State {
 int safeAtoi(const char *str, int *ip); // atoi with error checking
 void initDebugLog(const char *logname, const char *progname, uint32_t classes);
 void printPacket(Packet &pckt, FILE *fp);
-string hashToString(const unsigned char *hash);
 
 
 // ==========

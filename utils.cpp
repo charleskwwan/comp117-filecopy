@@ -88,17 +88,6 @@ void printPacket(Packet &pckt, FILE *fp) {
 }
 
 
-// converts a raw hash into a string of characters
-
-string hashToString(const unsigned char *hash) {
-    char str[41]; // 2 hex chars per hash char (2*20) + 1 null term
-    for (int i = 0; i < 20; i++)
-        sprintf(str + 2 * i, "%02x", (unsigned int)hash[i]);
-    str[40] = '\0'; // ensure null term
-    return str;
-}
-
-
 // ==========
 // 
 // NETWORK

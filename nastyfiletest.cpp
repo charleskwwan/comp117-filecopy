@@ -331,7 +331,7 @@ copyFile(string sourceDir, string fileName, string targetDir, int nastiness) {
     //
     // do an fopen on the output file
     //
-    fopenretval = outputFile.fopen(targetName.c_str(), "wb");  
+    fopenretval = outputFile.fopen((targetName + ".TMP").c_str(), "wb");  
                                          // wraps Unix fopen
                                          // Note wb gives "write, binary"
                                          // which avoids line and munging

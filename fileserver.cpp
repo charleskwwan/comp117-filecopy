@@ -20,6 +20,7 @@
 #include "c150debug.h"
 
 #include "utils.h"
+#include "hash.h"
 #include "filehandler.h"
 
 using namespace std; // for C++ std lib
@@ -152,6 +153,7 @@ void usage(char *progname, int exitCode) {
 
 Packet fillCheckRequest(int fileid, string fname, int nastiness) {
     FileHandler fhandler(fname, nastiness);
+    Hash fhash;
 
     if (fhandler.getFile() == NULL) {
         c150debug->printf(
@@ -162,14 +164,16 @@ Packet fillCheckRequest(int fileid, string fname, int nastiness) {
         return Packet(fileid, REQ_FL | CHECK_FL | NEG_FL, NULL_SEQNO, NULL, 0);
 
     } else {
+        fhash.set(fhandler.getFile(), fhandler.getLength());
+
         c150debug->printf(
             C150APPLICATION,
             "fillCheckRequest: Hash=[%s] computed for fname=%s",
-            hashToString(fhandler.getHash()).c_str(), fname.c_str()
+            fhash.str().c_str(), fname.c_str()
         );
         return Packet(
             fileid, REQ_FL | CHECK_FL | POS_FL, NULL_SEQNO,
-            (const char *)fhandler.getHash(), HASH_LEN
+            (const char *)fhash.get(), HASH_LEN
         );
     }
 }

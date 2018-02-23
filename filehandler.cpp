@@ -97,19 +97,6 @@ int FileHandler::read() {
 }
 
 
-// setHash
-//      - computes file hash and saves it
-//      - if no file is present, hash is set to all null chars
-
-void FileHandler::setHash() {
-    if (buf == NULL) {
-        for (unsigned i = 0; i < HASH_LEN; i++) hash[i] = '\0';
-    } else {
-        SHA1((const unsigned char *)buf, buflen, hash);
-    }
-}
-
-
 // ==========
 // 
 // PUBLIC
@@ -122,7 +109,6 @@ FileHandler::FileHandler(int _nastiness) {
     nastiness = _nastiness;
     buf = NULL;
     buflen = 0;
-    for (unsigned i = 0; i < HASH_LEN; i++) hash[i] = '\0';
 }
 
 // constructor
@@ -134,7 +120,6 @@ FileHandler::FileHandler(string _fname, int _nastiness) {
     nastiness = _nastiness;
     buf = NULL; // avoid double free error
     read(); // set buf, buflen
-    setHash(); // set hash
 }
 
 // destructor
@@ -174,29 +159,19 @@ const char *FileHandler::getFile() {
 //      - _buf and _buflen are expected to match
 //      - if say NULL, 6 is provided, FileHandler will have undefined behavior
 //        going forward
-//      - also computes new hash
 
 void FileHandler::setFile(const char *src, size_t srclen) {
     cleanup();
     buf = new char[srclen];
     strncpy(buf, src, srclen);
     buflen = srclen;
-    setHash();
 }
 
 
 // returns length of file
 
-size_t FileHandler::getFileLength() {
+size_t FileHandler::getLength() {
     return buflen;
-}
-
-
-// returns file hash
-//      - hash cannot be altered outside the FileHandler, only read
-
-const unsigned char *FileHandler::getHash() {
-    return hash;
 }
 
 

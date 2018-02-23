@@ -73,7 +73,7 @@ public:
 
     // == overload
     bool const operator==(const Hash &o) const {
-        return strncmp((const char *)hash, (const char *)o.hash, HASH_LEN);
+        return strncmp((const char *)hash, (const char *)o.hash, HASH_LEN) == 0;
     }
 
 

@@ -237,6 +237,9 @@ bool checkFile(string fname, Hash testhash, int nastiness) {
         "checkFile: Hash=[%s] computed for fname=%s, against server hash=[%s]",
         fhash.str().c_str(), fname.c_str(), testhash.str().c_str()
     );
+    *GRADING << "File: " << fname << " comparing client checksum ["
+             << fhash.str() << "] against server checksum ["
+             << testhash.str() << "]" << endl;
 
     return fhandler.getFile() != NULL && fhash == testhash;
 }
@@ -330,9 +333,9 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //      - if directory or file is invalid, nothing happens
 //      - if network fails, server is assumed down and exception is thrown
 //
-//  NEEDSWORK: add logs for grading
 //  NEEDSWORK: implement filecopy, currently only does end to end checking
 //  NEEDSWORK: once filecopy implemented, move check req to own function
+//  NEEDSWORK: make end-to-end check better, currently just one attempt
 
 int sendFile(
     C150DgmSocket *sock, 
@@ -349,6 +352,7 @@ int sendFile(
     Packet ipckt, opckt;
     PacketExpect expect;
     int fileid;
+    int checkAttempt = 1; // does nothing for now
 
     // check if file was successfully loaded
     if (fhandler.getFile() == NULL) {
@@ -361,6 +365,12 @@ int sendFile(
     }
 
     // send check request
+    // when filecopy implemented, put in own function, but right now needs more
+    // info than eventually neccessary.
+    *GRADING << "File: " << fname
+             << " requesting end-to-end check, attempt " << checkAttempt
+             << endl;
+
     opckt = Packet(
         NULL_FILEID, REQ_FL | CHECK_FL, NULL_SEQNO,
         fname.c_str(), fname.length()+1 // +1 for null term
@@ -382,6 +392,9 @@ int sendFile(
 
     // send check result
     bool checkResult = checkFile(fullname, Hash(ipckt.data), fileNastiness);
+    *GRADING << "File: " << fname << " end-to-end check "
+             << (checkResult ? "succeeded" : "failed") << ", attempt "
+             << checkAttempt << endl;
     sendVal = sendCheckResult(sock, fileid, checkResult);
 
     if (sendVal == -1) {

@@ -171,6 +171,8 @@ Packet fillCheckRequest(int fileid, string fname, int nastiness) {
             "fillCheckRequest: Hash=[%s] computed for fname=%s",
             fhash.str().c_str(), fname.c_str()
         );
+        *GRADING << "File: " << fname << " computed checksum ["
+                 << fhash.str() << "]" << endl;
         return Packet(
             fileid, REQ_FL | CHECK_FL | POS_FL, NULL_SEQNO,
             (const char *)fhash.get(), HASH_LEN
@@ -259,7 +261,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
     // file vars
     string dirname(targetDir);
-    string fname, tmpname;
+    string fname, fullname, tmpname;
     // size_t filelen; 
 
     // network vars
@@ -289,6 +291,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
             state = IDLE_ST;
             fname.clear();
+            fullname.clear();
             tmpname.clear();
             cache.clear(); // only cache for current transfer, now done
 
@@ -301,14 +304,18 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
         } else if (state == IDLE_ST && ipckt.flags == (REQ_FL | CHECK_FL)) {
             // server idle, respond yes to request
+            fname = ipckt.data;
+            fullname = makeFileName(dirname, fname.c_str());
+            tmpname = fullname + TMP_SUFFIX;
+
             c150debug->printf(
                 C150APPLICATION,
                 "run: Check request received for fileid=%d, fname=%s",
-                fileid, ipckt.data
+                fileid, fname.c_str()
             );
+            *GRADING << "File: " << fname << " beginning end-to-end check"
+                     << endl;
 
-            fname = makeFileName(dirname, ipckt.data);
-            tmpname = fname + TMP_SUFFIX;
             opckt = fillCheckRequest(++fileid, tmpname, fileNastiness);
             state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
 
@@ -326,9 +333,14 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 "run: Check results for fileid=%d received, will %s",
                 fileid, ipckt.flags & POS_FL ? "rename" : "remove"
             );
+            *GRADING << "File: " << fname << " end-to-end check "
+                     << (ipckt.flags & POS_FL ? "succeeded" : "failed") << endl;
 
             state = FIN_ST;
-            opckt = checkResults(ipckt, fileid, fname.c_str(), tmpname.c_str());
+            opckt = checkResults(
+                ipckt, fileid,
+                fullname.c_str(), tmpname.c_str()
+            );
 
         } else {
             // default, return error to client

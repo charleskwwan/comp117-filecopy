@@ -280,81 +280,103 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
     // main loop
     while (1) {
-        datalen = readPacket(sock, &ipckt);
+        opckt = ERROR_PCKT; // assume error packet until otherwise changed
 
-        if (datalen < 0 || (state == FIN_ST && ipckt.flags == FIN_FL)) {
-            // server timed out, in which case client gave up so reset OR
-            // client received final message, can complete request now
-            if (state != FIN_ST && state != IDLE_ST) { // timeout mid-transfer
+        // do non-state checking
+        if (readPacket(sock, &ipckt) < 0) {
+            // server timed out
+            if (state != IDLE_ST) // mid-file transfer
                 c150debug->printf(
-                    C150APPLICATION,
+                    C150APPLICATION, 
                     "run: Server timed out mid-transfer, client gave up"
                 );
-            } else if (state == FIN_ST && ipckt.flags == FIN_FL) {
-                c150debug->printf(
-                    C150APPLICATION,
-                    "run: Final FIN received, cleaning up"
-                );
-            }
 
             state = IDLE_ST;
-            fname.clear();
-            fullname.clear();
-            tmpname.clear();
-            cache.clear(); // only cache for current transfer, now done
-
+            cache.clear(); // only cache for curren transfer, now done
             continue; // no response needed
 
         } else if (cache.count(ipckt)) {
-            // previously sent packet received again, and still in current
-            // session. assume due to retry and send reply the same way
+            // previously seen packet found, assume client retry
+            c150debug->printf(
+                C150APPLICATION,
+                "run: Retry packet with fileid=%d, flags=%x, seqno=%d, and "
+                "datalen=%d received. Resending previous response",
+                ipckt.fileid, ipckt.flags & 0xff, ipckt.seqno, ipckt.datalen
+            );
+
             opckt = cache[ipckt];
-
-        } else if (state == IDLE_ST && ipckt.flags == (REQ_FL | CHECK_FL)) {
-            // server idle, respond yes to request
-            fname = ipckt.data;
-            fullname = makeFileName(dirname, fname.c_str());
-            tmpname = fullname + TMP_SUFFIX;
-
-            c150debug->printf(
-                C150APPLICATION,
-                "run: Check request received for fileid=%d, fname=%s",
-                fileid, fname.c_str()
-            );
-            *GRADING << "File: " << fname << " beginning end-to-end check"
-                     << endl;
-
-            opckt = fillCheckRequest(++fileid, tmpname, fileNastiness);
-            state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
-
-        } else if (state != IDLE_ST && ipckt.fileid != fileid) {
-            // server in transfer, but wrong fileid 
-            opckt = ERROR_PCKT;
-            opckt.fileid = ipckt.fileid; // tell client wrong id
-
-        } else if (state == CHECK_ST &&
-                   (ipckt.flags == (CHECK_FL | POS_FL) ||
-                    ipckt.flags == (CHECK_FL | NEG_FL))) {
-            // server ready for check results, pos/neg set
-            c150debug->printf(
-                C150APPLICATION,
-                "run: Check results for fileid=%d received, will %s",
-                fileid, ipckt.flags & POS_FL ? "rename" : "remove"
-            );
-            *GRADING << "File: " << fname << " end-to-end check "
-                     << (ipckt.flags & POS_FL ? "succeeded" : "failed") << endl;
-
-            state = FIN_ST;
-            opckt = checkResults(
-                ipckt, fileid,
-                fullname.c_str(), tmpname.c_str()
-            );
-
-        } else {
-            // default, return error to client
-            opckt = ERROR_PCKT;
         }
 
+        // respond by state
+        //      - each state has an expectation of packets it receives
+        //      - if expected packet received, opckt is changed to whats needed
+        switch(state) {
+            case IDLE_ST:
+                if (ipckt.flags == (REQ_FL | CHECK_FL)) {
+                    // server idle, respond yes to request
+                    fname = ipckt.data; // temp
+                    fullname = makeFileName(dirname, fname); // temp
+                    tmpname = fullname + TMP_SUFFIX; // temp
+                    fileid++; // temp
+
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: Check request received for fileid=%d",
+                        fileid, fname.c_str()
+                    );
+                    *GRADING << "File: " << fname << " beginning end-to-end "
+                             << "check" << endl;
+
+                    opckt = fillCheckRequest(fileid, tmpname, fileNastiness);
+                    state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
+                }
+                break;
+
+            case FILE_ST:
+                break;
+
+            case CHECK_ST:
+                if (ipckt.flags == (CHECK_FL | POS_FL) ||
+                    ipckt.flags == (CHECK_FL | NEG_FL)) {
+                    // server ready for check results, pos/neg set
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: Check results for fileid=%d received, will %s",
+                        fileid, ipckt.flags & POS_FL ? "rename" : "remove"
+                    );
+                    *GRADING << "File: " << fname << " end-to-end check "
+                             << (ipckt.flags & POS_FL ? "succeeded" : "failed")
+                             << endl;
+
+                    state = FIN_ST;
+                    opckt = checkResults( // rename/remove based on results
+                        ipckt, fileid,
+                        fullname.c_str(), tmpname.c_str()
+                    );
+                }
+                break;
+
+            case FIN_ST:
+                if (ipckt.flags == FIN_FL) {
+                    // final fin received
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: Final FIN received, cleaning up"
+                    );
+
+                    state = IDLE_ST;
+                    cache.clear(); // only cache for curren transfer, now done
+                    continue; // no response needed
+                }
+                break;
+
+            default:
+                // at the very least, tell client wrong id
+                if (ipckt.fileid != fileid) opckt.fileid = ipckt.fileid;
+        }
+
+        // send opckt
+        //      - by this pt, no continues so opckt should be sent
         if (opckt.flags != NEG_FL) // cache packets if nonerror
             cache.insert(pair<Packet, Packet>(ipckt, opckt));
         c150debug->printf(

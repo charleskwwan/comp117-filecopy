@@ -62,18 +62,10 @@ int FileHandler::read() {
 
     buf = (char *)malloc(fsize); // allocate enough for full file
 
-    // open file in rb to avoid line end munging
-    if (fp.fopen(fname.c_str(), "rb") == NULL) {
-        c150debug->printf(
-            C150APPLICATION,
-            "readFile: Error opening file %s, errno=%s",
-            fname.c_str(), strerror(errno)
-        );
-        return errno; // return straight away, since no more work needed
-    }
-
     // try read whole file
+    fp.fopen(fname.c_str(), "rb"); // isFile already verified can open
     buflen = fp.fread(buf, 1, fsize); // how ever much read, set to that
+
     if (buflen != (size_t)fsize) {
         c150debug->printf(
             C150APPLICATION,

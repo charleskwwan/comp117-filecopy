@@ -6,10 +6,12 @@
 
 #include <dirent.h>
 #include <sys/stat.h>
+#include <cerrno>
 #include <string>
 #include <algorithm> // std::max, std::min
 
 #include "c150dgmsocket.h"
+#include "c150nastyfile.h"
 #include "c150debug.h"
 
 #include "utils.h"
@@ -200,6 +202,7 @@ bool isDir(string dirname) {
 // checks if given fname specifies a valid file
 bool isFile(string fname) {
     struct stat statbuf;
+    NASTYFILE fp(0); // use to check if file can be opened
 
     if (lstat(fname.c_str(), &statbuf) != 0) {
         c150debug->printf(
@@ -209,6 +212,7 @@ bool isFile(string fname) {
         );
         return false;
     }
+
     if (!S_ISREG(statbuf.st_mode)) {
         c150debug->printf(
             C150APPLICATION,
@@ -217,6 +221,16 @@ bool isFile(string fname) {
         );
         return false;
     }
+
+    if (fp.fopen(fname.c_str(), "rb") == NULL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "isFile: File '%s' could not be opened, errno=%s",
+            fname.c_str(), strerror(errno)
+        );
+        return false;
+    }
+    fp.fclose();
 
     return true;
 }

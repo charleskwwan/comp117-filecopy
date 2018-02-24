@@ -312,24 +312,28 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         //      - if expected packet received, opckt is changed to whats needed
         switch(state) {
             case IDLE_ST:
-                if (ipckt.flags == (REQ_FL | CHECK_FL)) {
-                    // server idle, respond yes to request
-                    fname = ipckt.data; // temp
-                    fullname = makeFileName(dirname, fname); // temp
-                    tmpname = fullname + TMP_SUFFIX; // temp
-                    fileid++; // temp
+                if (ipckt.flags == (REQ_FL | FILE_FL)) {
 
-                    c150debug->printf(
-                        C150APPLICATION,
-                        "run: Check request received for fileid=%d",
-                        fileid, fname.c_str()
-                    );
-                    *GRADING << "File: " << fname << " beginning end-to-end "
-                             << "check" << endl;
-
-                    opckt = fillCheckRequest(fileid, tmpname, fileNastiness);
-                    state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
                 }
+
+                // if (ipckt.flags == (REQ_FL | CHECK_FL)) {
+                //     // server idle, respond yes to request
+                //     fname = ipckt.data; // temp
+                //     fullname = makeFileName(dirname, fname); // temp
+                //     tmpname = fullname + TMP_SUFFIX; // temp
+                //     fileid++; // temp
+
+                //     c150debug->printf(
+                //         C150APPLICATION,
+                //         "run: Check request received for fileid=%d",
+                //         fileid, fname.c_str()
+                //     );
+                //     *GRADING << "File: " << fname << " beginning end-to-end "
+                //              << "check" << endl;
+
+                //     opckt = fillCheckRequest(fileid, tmpname, fileNastiness);
+                //     state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
+                // }
                 break;
 
             case FILE_ST:

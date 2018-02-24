@@ -215,6 +215,56 @@ ssize_t writePacketWithRetries(
 
 
 // ==========
+// FILES
+// ==========
+
+// sendFileRequest
+//      - constructs and sends a file request for a given file
+// 
+//  args:
+//      - sock: socket
+//      - fname: name of file to send
+//
+//  returns:
+//      - new fileid from server, if successful
+//      - null fileid, if unsuccessful (timeout or request denied)
+//
+//  notes:
+//      - sendFileRequest is not responsible for verifying file exists and can
+//        be sent
+
+int sendFileRequest(C150DgmSocket *sock, string fname) {
+    Packet ipckt;
+    Packet opckt(
+        NULL_FILEID, REQ_FL | FILE_FL, NULL_SEQNO,
+        fname.c_str(), fname.length() + 1 // +1 for null term
+    );
+    PacketExpect expect = { NULL_FILEID, REQ_FL | FILE_FL };
+    ssize_t datalen;
+
+    c150debug->printf(
+        C150APPLICATION,
+        "sendFileRequest: Sending file request for fname=%s",
+        fname.c_str()
+    );
+    // NEEDSWORK: add grading statement?
+    datalen = writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES);
+
+    if (datalen < 0) { // timeout
+        return NULL_FILEID;
+
+    } else {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendFileRequest: File request for fname=%s was %s",
+            fname.c_str(), ipckt.flags & NEG_FL ? "denied" : "accepted";
+        );
+        return ipckt.flags & NEG_FL ? NULL_FILEID : ipckt.fileid;
+    }
+}
+
+
+// ==========
 // CHECKING
 // ==========
 
@@ -267,9 +317,11 @@ bool checkFile(string fname, Hash testhash, int nastiness) {
 //      - -2 if server failed to rename/remove
 
 int sendCheckResult(C150DgmSocket *sock, int fileid, bool result) {
-    FLAG resFlag = result ? POS_FL : NEG_FL;
     Packet ipckt;
-    Packet opckt(fileid, CHECK_FL | resFlag, NULL_SEQNO, NULL, 0);
+    Packet opckt(
+        fileid, CHECK_FL | (result ? POS_FL : NEG_FL), NULL_SEQNO,
+        NULL, 0
+    );
     PacketExpect expect = { fileid, CHECK_FL | FIN_FL };
     ssize_t datalen;
 
@@ -282,20 +334,15 @@ int sendCheckResult(C150DgmSocket *sock, int fileid, bool result) {
 
     if (datalen < 0) {
         return -1;
-    } else if (ipckt.flags & NEG_FL) {
-        c150debug->printf(
-            C150APPLICATION,
-            "sendCheckResult: Server failed to %s file",
-            result ? "rename" : "remove"
-        );
-        return -2;
+
     } else {
         c150debug->printf(
             C150APPLICATION,
-            "sendCheckResult: Server successfully %s file",
-            result ? "renamed" : "removed"
+            "sendCheckResult: Server %s %s file",
+            ipckt.flags & NEG_FL ? "failed to" : "successfully",
+            result ? "rename" : "remove"
         );
-        return 0;
+        return ipckt.flags & NEG_FL ? -2 : 0;
     }
 }
 
@@ -332,10 +379,7 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //
 //  return:
 //      - 0, success
-//      - -1, timeout
-//      - -2, file check denied
-//      - -3, file read error
-//      - -4, server cleanup error (could not rename/remove)
+//      - -1, file request unsuccessful
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -349,70 +393,80 @@ int sendFile(
     C150DgmSocket *sock, 
     string dir, string fname, int fileNastiness
 ) {
-    int retval = 0; // sendFile return value
-    int sendVal; // for results of sending packets at each stage
+    string fullname = makeFileName(dir, fname);
+    int fileid; // to uniquely identify file between client and server
+
+    // send initial file request
+    fileid = sendFileRequest(sock, fname);
+    if (fileid == NULL_FILEID) return -1;
+
+
+    return 0;
+
+    // int retval = 0; // sendFile return value
+    // int sendVal; // for results of sending packets at each stage
 
     // file vars
-    string fullname = makeFileName(dir, fname);
-    FileHandler fhandler(fullname, fileNastiness);
+    // string fullname = makeFileName(dir, fname);
+    // FileHandler fhandler(fullname, fileNastiness);
 
-    // network vars
-    Packet ipckt, opckt;
-    PacketExpect expect;
-    int fileid;
-    int checkAttempt = 1; // does nothing for now
+    // // network vars
+    // Packet ipckt, opckt;
+    // PacketExpect expect;
+    // int fileid;
+    // int checkAttempt = 1; // does nothing for now
 
-    // check if file was successfully loaded
-    if (fhandler.getFile() == NULL) {
-        c150debug->printf(
-            C150APPLICATION,
-            "sendFile: File %s could not be loaded. Skipping...",
-            fullname.c_str()
-        );
-        return -3;
-    }
+    // // check if file was successfully loaded
+    // if (fhandler.getFile() == NULL) {
+    //     c150debug->printf(
+    //         C150APPLICATION,
+    //         "sendFile: File %s could not be loaded. Skipping...",
+    //         fullname.c_str()
+    //     );
+    //     return -3;
+    // }
 
     // send check request
     // when filecopy implemented, put in own function, but right now needs more
     // info than eventually neccessary.
-    *GRADING << "File: " << fname
-             << " requesting end-to-end check, attempt " << checkAttempt
-             << endl;
+    // *GRADING << "File: " << fname
+    //          << " requesting end-to-end check, attempt " << checkAttempt
+    //          << endl;
 
-    opckt = Packet(
-        NULL_FILEID, REQ_FL | CHECK_FL, NULL_SEQNO,
-        fname.c_str(), fname.length()+1 // +1 for null term
-    );
-    expect.fileid = NULL_FILEID;
-    expect.flags = REQ_FL | CHECK_FL;
-    if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
-        return -1;
-    } else if (ipckt.flags & NEG_FL) {
-        c150debug->printf(
-            C150APPLICATION,
-            "sendFile: Check request for fname=%s denied",
-            fullname.c_str()
-        );
-        return -2;
-    } else if (ipckt.flags & POS_FL) {
-        fileid = ipckt.fileid;
-    }
+    // opckt = Packet(
+    //     NULL_FILEID, REQ_FL | CHECK_FL, NULL_SEQNO,
+    //     fname.c_str(), fname.length()+1 // +1 for null term
+    // );
+    // expect.fileid = NULL_FILEID;
+    // expect.flags = REQ_FL | CHECK_FL;
+    // if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
+    //     return -1;
+    // } else if (ipckt.flags & NEG_FL) {
+    //     c150debug->printf(
+    //         C150APPLICATION,
+    //         "sendFile: Check request for fname=%s denied",
+    //         fullname.c_str()
+    //     );
+    //     return -2;
+    // } else if (ipckt.flags & POS_FL) {
+    //     fileid = ipckt.fileid;
+    // }
 
-    // send check result
-    bool checkResult = checkFile(fullname, Hash(ipckt.data), fileNastiness);
-    *GRADING << "File: " << fname << " end-to-end check "
-             << (checkResult ? "succeeded" : "failed") << ", attempt "
-             << checkAttempt << endl;
-    sendVal = sendCheckResult(sock, fileid, checkResult);
+    // // send check result
+    // bool checkResult = checkFile(fullname, Hash(ipckt.data), fileNastiness);
+    // *GRADING << "File: " << fname << " end-to-end check "
+    //          << (checkResult ? "succeeded" : "failed") << ", attempt "
+    //          << checkAttempt << endl;
+    // sendVal = sendCheckResult(sock, fileid, checkResult);
 
-    if (sendVal == -1) {
-        return -1;
-    } else if (sendVal == -2) { // server failed to rename/remove
-        retval = -4;
-    }
+    // if (sendVal == -1) {
+    //     return -1;
+    // } else if (sendVal == -2) { // server failed to rename/remove
+    //     retval = -4;
+    // }
 
-    // send final fin
-    sendFin(sock, fileid);
+    // // send final fin
+    // sendFin(sock, fileid);
 
     return retval;
 }

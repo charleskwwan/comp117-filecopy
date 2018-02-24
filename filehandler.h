@@ -23,6 +23,7 @@ class FileHandler {
 public:
     FileHandler(int _nastiness);
     FileHandler(string _fname, int _nastiness); // read existing file
+    FileHandler(string _fname, size_t flen, int _nastiness); // allocate only
     ~FileHandler();
 
     string getName();
@@ -32,7 +33,11 @@ public:
     void setFile(const char *src, size_t srclen);
 
     size_t getLength(); // get length of file
+    void setLength(size_t _buflen);
+
     int write(); // write current buf to current fname
+
+    char &operator[] (size_t i);    
 
 protected:
     string fname; // filename

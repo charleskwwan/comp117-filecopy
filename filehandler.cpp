@@ -5,8 +5,8 @@
 // By: Justin Jo and Charles Wan
 
 
+#include <cstdlib> // use over new/delete since realloc
 #include <dirent.h>
-
 #include <cerrno>
 #include <string>
 #include <sstream>
@@ -31,7 +31,7 @@ using namespace C150NETWORK; // for all comp150 utils
 // cleans up and resets members of FileHandler
 
 void FileHandler::cleanup() {
-    if (buf != NULL) delete [] buf;
+    if (buf != NULL) free(buf);
     buf = NULL;
     buflen = 0;
 }
@@ -60,7 +60,7 @@ int FileHandler::read() {
     NASTYFILE fp(nastiness);
     int retval = 0;
 
-    buf = new char[fsize]; // allocate enough for full file
+    buf = (char *)malloc(fsize); // allocate enough for full file
 
     // open file in rb to avoid line end munging
     if (fp.fopen(fname.c_str(), "rb") == NULL) {
@@ -114,6 +114,7 @@ FileHandler::FileHandler(int _nastiness) {
 // constructor
 //      - saves fname and nastiness
 //      - automatically attempts to read file specified by fname to buf
+//      - primarily for file reading
 
 FileHandler::FileHandler(string _fname, int _nastiness) {
     setName(_fname);
@@ -121,6 +122,20 @@ FileHandler::FileHandler(string _fname, int _nastiness) {
     buf = NULL; // avoid double free error
     read(); // set buf, buflen
 }
+
+
+// consturctor
+//      - saves fname, flen as buflen, and nastiness
+//      - allocates a buf of size flen. client's responsibility to fill
+//      - primarily for file writing
+
+FileHandler::FileHandler(string _fname, size_t flen, int _nastiness) {
+    setName(_fname);
+    nastiness = _nastiness;
+    buf = NULL; // avoid bad realloc
+    setLength(flen);
+}
+
 
 // destructor
 
@@ -162,7 +177,7 @@ const char *FileHandler::getFile() {
 
 void FileHandler::setFile(const char *src, size_t srclen) {
     cleanup();
-    buf = new char[srclen];
+    buf = (char *)malloc(srclen);
     strncpy(buf, src, srclen);
     buflen = srclen;
 }
@@ -172,6 +187,16 @@ void FileHandler::setFile(const char *src, size_t srclen) {
 
 size_t FileHandler::getLength() {
     return buflen;
+}
+
+
+// sets new length for buffer
+//      - if buf has existing data, the first _buflen bytes are copied to the
+//        new buffer
+
+void FileHandler::setLength(size_t _buflen) {
+    buflen = _buflen;
+    buf = (char *)realloc(buf, buflen);
 }
 
 
@@ -224,4 +249,15 @@ int FileHandler::write() {
     }
 
     return retval;
+}
+
+
+// [] overload, for access to buf
+//      - if i is out of bounds, C150FileException is thrown
+
+char &FileHandler::operator[](size_t i) {
+    if (i < 0 || i >= buflen) {
+        throw C150FileException("FileHandler: index out of bounds");
+    }
+    return buf[i];
 }

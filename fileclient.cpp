@@ -19,6 +19,7 @@
 #include <dirent.h>
 
 #include "c150nastydgmsocket.h"
+#include "c150nastyfile.h"
 #include "c150grading.h"
 #include "c150debug.h"
 
@@ -112,12 +113,19 @@ int main(int argc, char *argv[]) {
         // write to debug log
         c150debug->printf(
             C150ALWAYSLOG,
-            "Caught C150NetworkException: %s",
+            "Caught %s",
             e.formattedExplanation().c_str()
         );
         // in case logging to file, write to console too
-        cerr << argv[0] << ": C150NetworkException: "
-             << e.formattedExplanation() << endl;
+        cerr << argv[0] << " " << e.formattedExplanation() << endl;
+    } catch (C150FileException e) {
+        c150debug->printf(
+            C150ALWAYSLOG,
+            "Caught %s",
+            e.formattedExplanation().c_str()
+        );
+        // in case logging to file, write to console too
+        cerr << argv[0] << " " << e.formattedExplanation() << endl;
     }
 
     return 0;
@@ -446,7 +454,7 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
         if (strcmp(srcFile->d_name, ".") == 0 ||
             strcmp(srcFile->d_name, "..") == 0) {
             continue;
-        } else if (isFile(srcFile->d_name)) {
+        } else if (isFile(makeFileName(dirname, srcFile->d_name))) {
             c150debug->printf(
                 C150APPLICATION,
                 "sendDir: Sending file '%s'",

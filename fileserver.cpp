@@ -16,6 +16,7 @@
 #include <map> // O(logn), but ideally unordered_map for O(1) if c++11 allowed
 
 #include "c150nastydgmsocket.h"
+#include "c150nastyfile.h"
 #include "c150grading.h"
 #include "c150debug.h"
 
@@ -104,12 +105,19 @@ int main(int argc, char *argv[]) {
         // write to debug log
         c150debug->printf(
             C150ALWAYSLOG,
-            "Caught C150NetworkException: %s",
+            "Caught %s",
             e.formattedExplanation().c_str()
         );
         // in case logging to file, write to console too
-        cerr << argv[0] << ": C150NetworkException: "
-             << e.formattedExplanation() << endl;
+        cerr << argv[0] << " " << e.formattedExplanation() << endl;
+    } catch (C150FileException e) {
+        c150debug->printf(
+            C150ALWAYSLOG,
+            "Caught %s",
+            e.formattedExplanation().c_str()
+        );
+        // in case logging to file, write to console too
+        cerr << argv[0] << " " << e.formattedExplanation() << endl;
     }
 
     return 0;

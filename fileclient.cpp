@@ -103,8 +103,8 @@ int main(int argc, char *argv[]) {
         c150debug->printf(C150APPLICATION, "Ready to send messages");
 
         // temp
-        sendFile(sock, dir, "data1", fileNastiness);
-        // sendDir(sock, dir, fileNastiness);
+        // sendFile(sock, dir, "data1", fileNastiness);
+        sendDir(sock, dir, fileNastiness);
 
         // clean up socket
         delete sock;
@@ -364,6 +364,28 @@ int sendFile(
         return -3;
     }
 
+    // send file request
+    opckt = Packet(
+        NULL_FILEID, REQ_FL | FILE_FL, NULL_SEQNO,
+        fname.c_str(), fname.length()+1 // +1 for null term
+    );
+    expect.fileid = NULL_FILEID;
+    expect.flags = REQ_FL | FILE_FL;
+    if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
+        return -1;
+    } else if (ipckt.flags & NEG_FL) {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendFile: File request for fname=%s denied",
+            fullname.c_str()
+        );
+        return -2;
+    } else if (ipckt.flags & POS_FL) {
+        fileid = ipckt.fileid;
+    }
+
+    // TODO: begin file copy
+
     // send check request
     // when filecopy implemented, put in own function, but right now needs more
     // info than eventually neccessary.
@@ -446,7 +468,7 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
         if (strcmp(srcFile->d_name, ".") == 0 ||
             strcmp(srcFile->d_name, "..") == 0) {
             continue;
-        } else if (isFile(srcFile->d_name)) {
+        } else if (isFile(makeFileName(dirname, srcFile->d_name))) {
             c150debug->printf(
                 C150APPLICATION,
                 "sendDir: Sending file '%s'",

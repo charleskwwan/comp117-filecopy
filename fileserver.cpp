@@ -180,7 +180,6 @@ Packet fillCheckRequest(int fileid, string fname, int nastiness) {
     }
 }
 
-
 // checkResults
 //      - checks the results of an e2e check by client
 //
@@ -269,6 +268,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     ssize_t datalen;
     map<Packet, Packet> cache; // map packet received to response sent
     int fileid = NULL_FILEID; // for new id, increment
+    int seqno = NULL_SEQNO; // used to anticipate number of packets
 
     // main loop
     while (1) {
@@ -303,7 +303,8 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             opckt = cache[ipckt];
 
         } else if (state == IDLE_ST && ipckt.flags == (REQ_FL | CHECK_FL)) {
-            // server idle, respond yes to request
+            // server idle, respond yes to check request
+            // transitions server from idle state to fin state upon success
             fname = ipckt.data;
             fullname = makeFileName(dirname, fname.c_str());
             tmpname = fullname + TMP_SUFFIX;
@@ -319,10 +320,44 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             opckt = fillCheckRequest(++fileid, tmpname, fileNastiness);
             state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
 
+        } else if (state == IDLE_ST && ipckt.flags == (REQ_FL | FILE_FL)) {
+            // server idle, responds yes to file request
+            // transitions server from idle state to file state
+            fname = ipckt.data;
+            fullname = makeFileName(dirname, fname.c_str());
+            tmpname = fullname + TMP_SUFFIX;
+
+            c150debug->printf(
+                C150APPLICATION,
+                "run: File request received for fileid=%d, fname=%s",
+                fileid, fname.c_str()
+            );
+
+            *GRADING << "File: " << fname << " beginning file transfer"
+                     << endl;
+
+            opckt = Packet(
+                fileid, REQ_FL | FILE_FL | POS_FL, NULL_SEQNO, NULL, 0
+            );
+            state = FILE_ST;
+
+            seqno = ipckt.seqno; // initial sequence number
+                                 // number of packets to expect from client
+
         } else if (state != IDLE_ST && ipckt.fileid != fileid) {
             // server in transfer, but wrong fileid 
             opckt = ERROR_PCKT;
             opckt.fileid = ipckt.fileid; // tell client wrong id
+
+        } else if (state == FILE_ST) {
+            // server in file write state and has received file packet with
+            // correct fileid
+
+            // TODO: add file write protocol
+            // accept packet, write to file
+            // check seqno and compare with initial sequence number
+            (void)seqno; // make compiler happy for now
+            continue;
 
         } else if (state == CHECK_ST &&
                    (ipckt.flags == (CHECK_FL | POS_FL) ||

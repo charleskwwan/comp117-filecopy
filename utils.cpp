@@ -8,7 +8,8 @@
 #include <sys/stat.h>
 #include <cerrno>
 #include <string>
-#include <algorithm> // std::max, std::min
+#include <algorithm> // max, min, sort
+#include <vector>
 
 #include "c150dgmsocket.h"
 #include "c150nastyfile.h"
@@ -152,6 +153,85 @@ void writePacket(C150DgmSocket *sock, const Packet *pcktp) {
 bool isExpected(const Packet &pckt, PacketExpect expect) {
     return (expect.fileid == pckt.fileid || expect.fileid == NULL_FILEID) &&
            (expect.flags & pckt.flags) == expect.flags;
+}
+
+
+// splitFile
+//      - splits a file into multiple packets
+//
+//  args:
+//      - parts: vector to store resulting packets. pckts WILL BE cleared and
+//               may be reallocated
+//      - hdr: splitFile will use control info from hdr for all packets. fileid
+//             and flags will be same for all, but seqno provided will be used
+//             as the initial seqno
+//      - file: file data stored as byte array
+//      - flen: length of file in bytes
+//
+//  returns:
+//      - number of pckts created
+
+int splitFile(
+    vector<Packet> &parts, const Packet &hdr,
+    const char *file, size_t flen
+) {
+    int npckts = flen / MAX_WRITE_LEN;
+    int remainder = flen % MAX_WRITE_LEN; // last part may not fill packet
+
+    // guarantee enough space for packets
+    parts.reserve(npckts + (remainder != 0 ? 1 : 0));
+
+    // create first n packets
+    for (int i = 0; i < npckts; i++)
+        parts[i] = Packet(
+            hdr.fileid, hdr.flags, hdr.seqno + i,
+            file + i * MAX_WRITE_LEN, MAX_WRITE_LEN
+        );
+
+    // check if remainder packet exists, and write if needed
+    if (remainder != 0)
+        parts[npckts] = Packet(
+            hdr.fileid, hdr.flags, hdr.seqno + npckts,
+            file + npckts * MAX_WRITE_LEN, remainder
+        );
+
+    return npckts + (remainder != 0 ? 1 : 0);
+}
+
+
+// mergePackets
+//      - merges packets into a single file, stored in buf
+//      - only the first buflen bytes of the file will be written to buf
+//
+//  args:
+//      - pckts: packets to be merged
+//      - buf: buffer to stored file
+//      - buflen: max length of buf
+//
+//  returns:
+//      - number of bytes successfully written to buf
+//
+//  note:
+//      - pckts will be sorted by seqno and file will be reassembled by
+//        post-sort order
+
+bool packetComp(const Packet &p, const Packet &q) { return p.seqno < q.seqno; }
+
+size_t mergePackets(vector<Packet> &pckts, char *buf, size_t buflen) {
+    size_t written = 0;
+    size_t writelen;
+
+    sort(pckts.begin(), pckts.end(), packetComp); // ensure correct order
+
+    // write data to buf until buflen reached or all data successfull written
+    for (vector<Packet>::iterator it = pckts.begin(); it != pckts.end(); it++) {
+        writelen = min(buflen - written, (size_t)it->datalen);
+        strncpy(buf + written, it->data, writelen);
+        written += writelen;
+        if (written >= buflen) break;
+    }
+
+    return written;
 }
 
 

@@ -8,6 +8,8 @@
 #define _FCOPY_UTILS_H_
 
 
+#include <vector>
+
 #include "c150dgmsocket.h"
 #include "packet.h"
 
@@ -20,15 +22,6 @@ using namespace C150NETWORK; // for all comp150 utils
 // GENERAL
 //
 // ==========
-
-// STATE enum
-enum State {
-    IDLE_ST,
-    FILE_ST,
-    CHECK_ST,
-    FIN_ST // finish/end
-};
-
 
 // functions
 int safeAtoi(const char *str, int *ip); // atoi with error checking
@@ -56,6 +49,11 @@ struct PacketExpect {
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp);
 void writePacket(C150DgmSocket *sock, const Packet *pcktp);
 bool isExpected(const Packet &pckt, PacketExpect expect);
+int splitFile(
+    vector<Packet> &parts, const Packet &hdr,
+    const char *file, size_t flen
+);
+size_t mergePackets(vector<Packet> &pckts, char *buf, size_t buflen);
 
 
 // ==========

@@ -28,6 +28,16 @@ using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
 
 
+
+// STATE enum
+enum State {
+    IDLE_ST,
+    FILE_ST,
+    CHECK_ST,
+    FIN_ST // finish/end
+};
+
+
 // constants
 const int GIVEUP_TIMEOUT = 10000; // 10s, time until server gives up
 const Packet ERROR_PCKT(NULL_FILEID, NEG_FL, NULL_SEQNO, NULL, 0);
@@ -274,7 +284,6 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
     // network vars
     Packet ipckt, opckt; // incoming, outgoing
-    ssize_t datalen;
     map<Packet, Packet> cache; // map packet received to response sent
     int fileid = NULL_FILEID; // for new id, increment
 

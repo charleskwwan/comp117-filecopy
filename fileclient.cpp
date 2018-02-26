@@ -257,7 +257,7 @@ int sendFileRequest(C150DgmSocket *sock, string fname) {
         c150debug->printf(
             C150APPLICATION,
             "sendFileRequest: File request for fname=%s was %s",
-            fname.c_str(), ipckt.flags & NEG_FL ? "denied" : "accepted";
+            fname.c_str(), ipckt.flags & NEG_FL ? "denied" : "accepted"
         );
         return ipckt.flags & NEG_FL ? NULL_FILEID : ipckt.fileid;
     }
@@ -468,7 +468,7 @@ int sendFile(
     // // send final fin
     // sendFin(sock, fileid);
 
-    return retval;
+    // return retval;
 }
 
 

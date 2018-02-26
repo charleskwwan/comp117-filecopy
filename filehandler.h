@@ -16,9 +16,6 @@
 //
 // ==========
 
-// NEEDSWORK: overload [] operator so allow in place writing and individual
-//            bytes access
-
 class FileHandler {
 public:
     FileHandler(int _nastiness);

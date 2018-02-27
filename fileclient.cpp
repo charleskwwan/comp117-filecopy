@@ -316,6 +316,34 @@ int sendFileParts(
 // CHECKING
 // ==========
 
+// sendCheckRequest
+//      - constructs and sends a check request for a file
+//
+// args:
+//      - sock: socket
+//      - fileid: file id
+//
+// return:
+//      - 0, if request successfully sent and acknowledged
+//      - -1, if error during request
+
+int sendCheckRequest(C150DgmSocket *sock, int fileid) {
+    Packet ipckt;
+    Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, NULL_SEQNO, NULL, 0);
+    PacketExpect expect(fileid, REQ_FL | CHECK_FL, NULL_SEQNO);
+
+    if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) >= 0) {
+        c150debug->printf(
+            C150APPLICATION,
+            "sendCheckRequest: Check request for fileid=%u was %s",
+            fileid, ipckt.flags & NEG_FL ? "denied" : "accepted"
+        );
+        return ipckt.flags & NEG_FL ? -1 : 0;
+    }
+
+    return -1;
+}
+
 // checkFile
 //      - checks a hash against a file, read from disk
 //
@@ -429,6 +457,7 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //      - 0, success
 //      - -1, file request unsuccessful
 //      - -2, failed to send file
+//      - -3, check request denied
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -443,21 +472,24 @@ int sendFile(
     string dir, string fname, int fnastiness
 ) {
     string fullname = makeFileName(dir, fname);
-    Packet ipckt;
+    Packet initPckt;
     // int fileid; // to uniquely identify file between client and server
 
     // send initial file request
-    ipckt = sendFileRequest(sock, fname);
-    if (ipckt == ERROR_PCKT) return -1;
+    initPckt = sendFileRequest(sock, fname);
+    if (initPckt == ERROR_PCKT) return -1;
 
     // send file
     if (sendFileParts(
             sock,
             fullname, fnastiness,
-            ipckt.fileid, ipckt.seqno
+            initPckt.fileid, initPckt.seqno
         ) < 0) {
         return -2;
     }
+
+    // send check request after file sent done
+    if (sendCheckRequest(sock, initPckt.fileid) < 0) return -3;
 
 //     int sendFileParts(
 //     C150DgmSocket *sock,

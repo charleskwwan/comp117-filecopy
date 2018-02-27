@@ -150,6 +150,45 @@ void usage(char *progname, int exitCode) {
 
 
 // ==========
+// FILE
+// ==========
+
+// saveFile
+//      - merges packets and saves file
+//
+//  args:
+//      - parts: packets to merge
+//      - fname: file name (should incl. directory name)
+//      - initSeqno: initial sequence number
+//      - nastiness: with which to save file
+//
+//  return: n/a
+
+void saveFile(
+    vector<Packet> &parts,
+    string fname, int initSeqno, int nastiness
+) {
+    size_t buflen = 0;
+
+    // compute size of file
+    for (vector<Packet>::iterator it = parts.begin(); it != parts.end(); it++)
+        buflen += it->datalen;
+
+    // allocate buf with buflen, put file data in it
+    char *buf = new char[buflen];
+    mergePackets(parts, initSeqno, buf, buflen);
+
+    // use file handler to save
+    FileHandler fhandler(nastiness);
+    fhandler.setName(fname);
+    fhandler.setFile(buf, buflen);
+    fhandler.write();
+
+    delete [] buf;
+}
+
+
+// ==========
 // CHECKING
 // ==========
 
@@ -362,7 +401,17 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     opckt = Packet(ipckt.fileid, FILE_FL, ipckt.seqno, NULL, 0);
 
                 } else if (ipckt.flags == (REQ_FL | CHECK_FL)) {
+                    // receive check request, so save file, reread it, then
+                    // return checksum
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: Check request received for fileid=%d",
+                        ipckt.fileid
+                    );
 
+                    saveFile(parts, fullname, initSeqno, fileNastiness);
+                    opckt = fillCheckRequest(fileid, fullname, fileNastiness);
+                    state = CHECK_ST;
                 }
                 break;
 

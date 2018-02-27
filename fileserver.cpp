@@ -368,7 +368,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 if (ipckt.flags == (REQ_FL | FILE_FL)) {
                     fname = ipckt.data;
                     fullname = makeFileName(dirname, fname);
-                    tmpname = fullname + TMP_SUFFIX;
+                    tmpname = fullname + string(TMP_SUFFIX);
                     fileid++;
 
                     c150debug->printf(
@@ -409,8 +409,8 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         ipckt.fileid
                     );
 
-                    saveFile(parts, fullname, initSeqno, fileNastiness);
-                    opckt = fillCheckRequest(fileid, fullname, fileNastiness);
+                    saveFile(parts, fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    opckt = fillCheckRequest(fileid, fullname + TMP_SUFFIX, fileNastiness);
                     state = CHECK_ST;
                 }
                 break;
@@ -431,9 +431,9 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     state = FIN_ST;
                     opckt = checkResults( // rename/remove based on results
                         ipckt, fileid,
-                        fullname.c_str(), tmpname.c_str()
+                        fullname.c_str(), (fullname + TMP_SUFFIX).c_str()
                     );
-                }
+                }   
                 break;
 
             case FIN_ST:

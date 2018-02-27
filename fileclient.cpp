@@ -324,10 +324,10 @@ int sendFileParts(
 //      - fileid: file id
 //
 // return:
-//      - 0, if request successfully sent and acknowledged
-//      - -1, if error during request
+//      - Hash of the file, if request successfully sent and acknowledged
+//      - NULL if error during request
 
-int sendCheckRequest(C150DgmSocket *sock, int fileid) {
+Hash sendCheckRequest(C150DgmSocket *sock, int fileid) {
     Packet ipckt;
     Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, NULL_SEQNO, NULL, 0);
     PacketExpect expect(fileid, REQ_FL | CHECK_FL, NULL_SEQNO);
@@ -338,10 +338,12 @@ int sendCheckRequest(C150DgmSocket *sock, int fileid) {
             "sendCheckRequest: Check request for fileid=%u was %s",
             fileid, ipckt.flags & NEG_FL ? "denied" : "accepted"
         );
-        return ipckt.flags & NEG_FL ? -1 : 0;
+        Hash hash(ipckt.data);
+
+        return ipckt.flags & NEG_FL ? NULL_HASH : hash;
     }
 
-    return -1;
+    return NULL_HASH;
 }
 
 // checkFile
@@ -458,6 +460,8 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //      - -1, file request unsuccessful
 //      - -2, failed to send file
 //      - -3, check request denied
+//      - -4, check result failed due to timeout
+//      - -5, check result failed due to failed rename/remove on server
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -489,16 +493,25 @@ int sendFile(
     }
 
     // send check request after file sent done
-    if (sendCheckRequest(sock, initPckt.fileid) < 0) return -3;
+    Hash hash = sendCheckRequest(sock, initPckt.fileid);
+    if (hash == NULL_HASH)
+        return -3;
 
-//     int sendFileParts(
-//     C150DgmSocket *sock,
-//     string fname, int nastiness,
-//     int fileid, int initSeqno
-// )
+    switch(sendCheckResult(
+        sock,
+        initPckt.fileid,
+        checkFile(fullname, hash, fnastiness)
+    )) {
+        case -1:
+            return -4;
+        case -2: 
+            sendFin(sock, initPckt.fileid);
+            return -5;
+    }
 
-
+    sendFin(sock, initPckt.fileid);
     return 0;
+}
 
     // int retval = 0; // sendFile return value
     // int sendVal; // for results of sending packets at each stage
@@ -566,7 +579,6 @@ int sendFile(
     // sendFin(sock, fileid);
 
     // return retval;
-}
 
 
 // sendDir

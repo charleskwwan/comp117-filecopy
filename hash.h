@@ -73,12 +73,24 @@ public:
 
     // == overload
     bool const operator==(const Hash &o) const {
-        return strncmp((const char *)hash, (const char *)o.hash, HASH_LEN) == 0;
+        if (hash == NULL && o.hash == NULL) {
+            return true;
+        } else if (hash == NULL || o.hash == NULL) {
+            return false;
+        } else {
+            return strncmp(
+                (const char *)hash, (const char *)o.hash, HASH_LEN
+            ) == 0;
+        }
     }
 
 
 private:
     unsigned char hash[20];
 };
+
+
+// constants
+const Hash NULL_HASH; // default is considered null hash
 
 #endif

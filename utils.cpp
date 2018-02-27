@@ -152,7 +152,8 @@ void writePacket(C150DgmSocket *sock, const Packet *pcktp) {
 
 bool isExpected(const Packet &pckt, PacketExpect expect) {
     return (expect.fileid == pckt.fileid || expect.fileid == NULL_FILEID) &&
-           (expect.flags & pckt.flags) == expect.flags;
+           (expect.flags & pckt.flags) == expect.flags &&
+           (expect.seqno == pckt.seqno || expect.seqno == NULL_SEQNO);
 }
 
 
@@ -183,17 +184,17 @@ int splitFile(
 
     // create first n packets
     for (int i = 0; i < npckts; i++)
-        parts[i] = Packet(
+        parts.push_back(Packet(
             hdr.fileid, hdr.flags, hdr.seqno + i,
             file + i * MAX_WRITE_LEN, MAX_WRITE_LEN
-        );
+        ));
 
     // check if remainder packet exists, and write if needed
     if (remainder != 0)
-        parts[npckts] = Packet(
+        parts.push_back(Packet(
             hdr.fileid, hdr.flags, hdr.seqno + npckts,
             file + npckts * MAX_WRITE_LEN, remainder
-        );
+        ));
 
     return npckts + (remainder != 0 ? 1 : 0);
 }
@@ -205,6 +206,7 @@ int splitFile(
 //
 //  args:
 //      - pckts: packets to be merged
+//      - initSeqno: initial sequence number
 //      - buf: buffer to stored file
 //      - buflen: max length of buf
 //
@@ -212,23 +214,27 @@ int splitFile(
 //      - number of bytes successfully written to buf
 //
 //  note:
-//      - pckts will be sorted by seqno and file will be reassembled by
-//        post-sort order
+//      - if there are holes in pckts, there may be holes in buf, depending on
+//        the size of buflen vs. actual size of file
 
-bool packetComp(const Packet &p, const Packet &q) { return p.seqno < q.seqno; }
-
-size_t mergePackets(vector<Packet> &pckts, char *buf, size_t buflen) {
-    size_t written = 0;
-    size_t writelen;
-
-    sort(pckts.begin(), pckts.end(), packetComp); // ensure correct order
+size_t mergePackets(
+    vector<Packet> &pckts, int initSeqno,
+    char *buf, size_t buflen
+) {
+    size_t written;
+    size_t offset, writelen;
 
     // write data to buf until buflen reached or all data successfull written
     for (vector<Packet>::iterator it = pckts.begin(); it != pckts.end(); it++) {
-        writelen = min(buflen - written, (size_t)it->datalen);
-        strncpy(buf + written, it->data, writelen);
-        written += writelen;
-        if (written >= buflen) break;
+        offset = (it->seqno - initSeqno) * MAX_WRITE_LEN;
+
+        if (offset >= buflen) {
+            continue;
+        } else {
+            writelen = min(buflen - offset, (size_t)it->datalen);
+            strncpy(buf + offset, it->data, writelen);
+            written += writelen;
+        }
     }
 
     return written;

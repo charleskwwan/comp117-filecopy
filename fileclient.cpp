@@ -17,6 +17,7 @@
 #include <iostream>
 #include <cstring>
 #include <dirent.h>
+#include <vector>
 
 #include "c150nastydgmsocket.h"
 #include "c150nastyfile.h"
@@ -38,7 +39,7 @@ const int MAX_TRIES = 5;
 
 // fwd declarations
 void usage(char *progname, int exitCode);
-int sendFile(C150DgmSocket *sock, string dir, string fname, int fileNastiness);
+int sendFile(C150DgmSocket *sock, string dir, string fname, int fnastiness);
 void sendDir(C150DgmSocket *sock, string dir, int fileNastiness);
 
 
@@ -104,7 +105,7 @@ int main(int argc, char *argv[]) {
         c150debug->printf(C150APPLICATION, "Ready to send messages");
 
         // temp
-        sendFile(sock, dir, "data1", fileNastiness);
+        sendFile(sock, dir, "data10", fileNastiness);
         // sendDir(sock, dir, fileNastiness);
 
         // clean up socket
@@ -226,20 +227,20 @@ ssize_t writePacketWithRetries(
 //      - fname: name of file to send
 //
 //  returns:
-//      - new fileid from server, if successful
-//      - null fileid, if unsuccessful (timeout or request denied)
+//      - response packet containing new fileid and initial seqno, if successful
+//      - error packet, if unsuccessful (timeout or request denied)
 //
 //  notes:
 //      - sendFileRequest is not responsible for verifying file exists and can
 //        be sent
 
-int sendFileRequest(C150DgmSocket *sock, string fname) {
-    Packet ipckt;
+Packet sendFileRequest(C150DgmSocket *sock, string fname) {
+    Packet ipckt = ERROR_PCKT; // default if fail
     Packet opckt(
         NULL_FILEID, REQ_FL | FILE_FL, NULL_SEQNO,
         fname.c_str(), fname.length() + 1 // +1 for null term
     );
-    PacketExpect expect = { NULL_FILEID, REQ_FL | FILE_FL };
+    PacketExpect expect(NULL_FILEID, REQ_FL | FILE_FL, NULL_SEQNO);
     ssize_t datalen;
 
     c150debug->printf(
@@ -250,17 +251,64 @@ int sendFileRequest(C150DgmSocket *sock, string fname) {
     // NEEDSWORK: add grading statement?
     datalen = writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES);
 
-    if (datalen < 0) { // timeout
-        return NULL_FILEID;
-
-    } else {
+    if (datalen >= 0) { // nontimeout
         c150debug->printf(
             C150APPLICATION,
             "sendFileRequest: File request for fname=%s was %s",
             fname.c_str(), ipckt.flags & NEG_FL ? "denied" : "accepted"
         );
-        return ipckt.flags & NEG_FL ? NULL_FILEID : ipckt.fileid;
+        ipckt = ipckt.flags & NEG_FL ? ERROR_PCKT : ipckt;
     }
+
+    return ipckt;
+}
+
+
+// sendFileParts
+//      - sends a file in packets one at a time
+//
+//  args:
+//      - sock: socket
+//      - fname: name of file
+//      - nastiness: with which to read file
+//      - fileid: negotiated with server during initial file request
+//      - initSeqno: iniital sequence number
+//
+//  return:
+//      - number of packets written, if successful
+//      - -1, if unsuccessful
+
+int sendFileParts(
+    C150DgmSocket *sock,
+    string fname, int nastiness,
+    int fileid, int initSeqno
+) {
+    FileHandler fhandler(fname, nastiness);
+    Packet hdr(fileid, FILE_FL, initSeqno, NULL, 0), ipckt;
+    vector<Packet> parts;
+    int written = 0;
+
+    // split file into packets
+    splitFile(parts, hdr, fhandler.getFile(), fhandler.getLength());
+
+    for (vector<Packet>::iterator it = parts.begin(); it != parts.end(); it++) {
+        // send every packet one at a time, abort if unsuccessful
+        PacketExpect expect(fileid, FILE_FL, initSeqno + written);
+        Packet opckt = *it;
+
+        c150debug->printf(
+            C150APPLICATION,
+            "sendFileParts: Sending file packet seqno=%d for fname=%s, "
+            "fileid=%d, with datalen=%u",
+            opckt.seqno, fname.c_str(), opckt.fileid, opckt.datalen
+        );
+
+        if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0)
+            return -1;
+        written++;
+    }
+
+    return written;
 }
 
 
@@ -322,7 +370,7 @@ int sendCheckResult(C150DgmSocket *sock, int fileid, bool result) {
         fileid, CHECK_FL | (result ? POS_FL : NEG_FL), NULL_SEQNO,
         NULL, 0
     );
-    PacketExpect expect = { fileid, CHECK_FL | FIN_FL };
+    PacketExpect expect(fileid, CHECK_FL | FIN_FL, NULL_SEQNO);
     ssize_t datalen;
 
     c150debug->printf(
@@ -375,11 +423,12 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 //      - sock: socket
 //      - dir: name of file directory
 //      - fname: name of file
-//      - fileNastiness: nastiness with which to send file
+//      - fnastiness: nastiness with which to send file
 //
 //  return:
 //      - 0, success
 //      - -1, file request unsuccessful
+//      - -2, failed to send file
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -391,14 +440,30 @@ void sendFin(C150DgmSocket *sock, int fileid) {
 
 int sendFile(
     C150DgmSocket *sock, 
-    string dir, string fname, int fileNastiness
+    string dir, string fname, int fnastiness
 ) {
     string fullname = makeFileName(dir, fname);
-    int fileid; // to uniquely identify file between client and server
+    Packet ipckt;
+    // int fileid; // to uniquely identify file between client and server
 
     // send initial file request
-    fileid = sendFileRequest(sock, fname);
-    if (fileid == NULL_FILEID) return -1;
+    ipckt = sendFileRequest(sock, fname);
+    if (ipckt == ERROR_PCKT) return -1;
+
+    // send file
+    if (sendFileParts(
+            sock,
+            fullname, fnastiness,
+            ipckt.fileid, ipckt.seqno
+        ) < 0) {
+        return -2;
+    }
+
+//     int sendFileParts(
+//     C150DgmSocket *sock,
+//     string fname, int nastiness,
+//     int fileid, int initSeqno
+// )
 
 
     return 0;

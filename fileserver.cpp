@@ -40,7 +40,6 @@ enum State {
 
 // constants
 const int GIVEUP_TIMEOUT = 10000; // 10s, time until server gives up
-const Packet ERROR_PCKT(NULL_FILEID, NEG_FL, NULL_SEQNO, NULL, 0);
 const char *TMP_SUFFIX = ".TMP";
 
 
@@ -280,12 +279,13 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     // file vars
     string dirname(targetDir);
     string fname, fullname, tmpname;
-    // size_t filelen; 
 
     // network vars
     Packet ipckt, opckt; // incoming, outgoing
     map<Packet, Packet> cache; // map packet received to response sent
+    vector<Packet> parts;
     int fileid = NULL_FILEID; // for new id, increment
+    int initSeqno = NULL_SEQNO + 1; // NEEDSWORKS: make fancy later
 
     // main loop
     while (1) {
@@ -314,6 +314,11 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             );
 
             opckt = cache[ipckt];
+
+        } else if (state != IDLE_ST && ipckt.fileid != fileid) {
+            // ipckt with wrong fileid received, just write error packet
+            writePacket(sock, &ERROR_PCKT);
+            continue;
         }
 
         // respond by state
@@ -322,30 +327,43 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         switch(state) {
             case IDLE_ST:
                 if (ipckt.flags == (REQ_FL | FILE_FL)) {
+                    fname = ipckt.data;
+                    fullname = makeFileName(dirname, fname);
+                    tmpname = fullname + TMP_SUFFIX;
+                    fileid++;
 
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: File request received for fname=%s, assigning "
+                        "fileid=%d",
+                        fname.c_str(), fileid
+                    );
+                    // NEEDSWORK: add grading statement
+
+                    opckt = Packet(
+                        fileid, ipckt.flags | POS_FL, initSeqno,
+                        NULL, 0
+                    );
+                    state = FILE_ST;
                 }
-
-                // if (ipckt.flags == (REQ_FL | CHECK_FL)) {
-                //     // server idle, respond yes to request
-                //     fname = ipckt.data; // temp
-                //     fullname = makeFileName(dirname, fname); // temp
-                //     tmpname = fullname + TMP_SUFFIX; // temp
-                //     fileid++; // temp
-
-                //     c150debug->printf(
-                //         C150APPLICATION,
-                //         "run: Check request received for fileid=%d",
-                //         fileid, fname.c_str()
-                //     );
-                //     *GRADING << "File: " << fname << " beginning end-to-end "
-                //              << "check" << endl;
-
-                //     opckt = fillCheckRequest(fileid, tmpname, fileNastiness);
-                //     state = opckt.flags & NEG_FL ? IDLE_ST : CHECK_ST;
-                // }
                 break;
 
             case FILE_ST:
+                if (ipckt.flags == FILE_FL) {
+                    // receive file parts one at a time, and store in parts
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: File packet seqno=%d received for fileid=%d, "
+                        "with datalen=%u",
+                        ipckt.seqno, ipckt.fileid, ipckt.datalen
+                    );
+
+                    parts.push_back(ipckt);
+                    opckt = Packet(ipckt.fileid, FILE_FL, ipckt.seqno, NULL, 0);
+
+                } else if (ipckt.flags == (REQ_FL | CHECK_FL)) {
+
+                }
                 break;
 
             case CHECK_ST:

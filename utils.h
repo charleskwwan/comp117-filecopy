@@ -35,6 +35,10 @@ void printPacket(Packet &pckt, FILE *fp);
 //
 // ==========
 
+// consts
+const Packet ERROR_PCKT(NULL_FILEID, NEG_FL, NULL_SEQNO, NULL, 0);
+
+
 // PacketExpect
 //      - defines an expectation for the next read packet by certain identifying
 //        values in a packet
@@ -42,6 +46,17 @@ void printPacket(Packet &pckt, FILE *fp);
 struct PacketExpect {
     int fileid; // when = NULL_FILEID (filepacket.h), any fileid allowed
     FLAG flags;
+    int seqno; // same as fileid for NULL_SEQNO
+
+    PacketExpect(int _fileid, FLAG _flags, int _seqno) {
+        fileid = _fileid;
+        flags = _flags;
+        seqno = _seqno;
+    }
+
+    PacketExpect() {
+        PacketExpect(NULL_FILEID, NO_FLS, NULL_SEQNO);
+    }
 };
 
 
@@ -53,7 +68,10 @@ int splitFile(
     vector<Packet> &parts, const Packet &hdr,
     const char *file, size_t flen
 );
-size_t mergePackets(vector<Packet> &pckts, char *buf, size_t buflen);
+size_t mergePackets(
+    vector<Packet> &pckts, int initSeqno,
+    char *buf, size_t buflen
+);
 
 
 // ==========

@@ -38,8 +38,8 @@
 core.*
 
 # File samples
-SRC/
-TARGET/
+SRC*/
+TARGET*/
 HEADERS/
 
 # logs

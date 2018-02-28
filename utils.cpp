@@ -10,6 +10,7 @@
 #include <string>
 #include <algorithm> // max, min, sort
 #include <vector>
+#include <set>
 
 #include "c150dgmsocket.h"
 #include "c150nastyfile.h"
@@ -157,6 +158,13 @@ bool isExpected(const Packet &pckt, PacketExpect expect) {
 }
 
 
+// compares p and q by seqno
+
+bool seqCompare(const Packet &p, const Packet &q) {
+    return p.seqno < q.seqno;
+}
+
+
 // splitFile
 //      - splits a file into multiple packets
 //
@@ -218,14 +226,14 @@ int splitFile(
 //        the size of buflen vs. actual size of file
 
 size_t mergePackets(
-    vector<Packet> &pckts, int initSeqno,
+    set<Packet> &pckts, int initSeqno,
     char *buf, size_t buflen
 ) {
     size_t written;
     size_t offset, writelen;
 
     // write data to buf until buflen reached or all data successfull written
-    for (vector<Packet>::iterator it = pckts.begin(); it != pckts.end(); it++) {
+    for (set<Packet>::iterator it = pckts.begin(); it != pckts.end(); it++) {
         offset = (it->seqno - initSeqno) * MAX_WRITE_LEN;
 
         if (offset >= buflen) {

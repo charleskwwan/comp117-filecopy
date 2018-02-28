@@ -33,8 +33,8 @@ using namespace C150NETWORK; // for all comp150 utils
 
 
 // constants
-const int TIMEOUT_DURATION = 1000; // 1 second
-const int MAX_TRIES = 5;
+const int TIMEOUT_DURATION = 50; // 0.05s
+const int MAX_TRIES = 10;
 
 
 // fwd declarations
@@ -81,7 +81,10 @@ int main(int argc, char *argv[]) {
 
     // check target directory
     dir = argv[srcDirArg];
-    if (!isDir(dir.c_str())) usage(argv[0], 8);
+    if (!isDir(dir.c_str())) {
+        fprintf(stderr, "error: '%s' is not a valid directory\n", dir.c_str());
+        usage(argv[0], 8);
+    }
 
     // debugging
     // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
@@ -105,8 +108,8 @@ int main(int argc, char *argv[]) {
         c150debug->printf(C150APPLICATION, "Ready to send messages");
 
         // temp
-        sendFile(sock, dir, "data10", fileNastiness);
-        // sendDir(sock, dir, fileNastiness);
+        // sendFile(sock, dir, "data10000", fileNastiness);
+        sendDir(sock, dir, fileNastiness);
 
         // clean up socket
         delete sock;
@@ -433,12 +436,25 @@ int sendCheckResult(C150DgmSocket *sock, int fileid, bool result) {
 //      - this is to tell the server it can cleanup. however, if this packet is
 //      - lossed, server will eventually timeout and cleanup anyway, so no need 
 //      - to resend.
+//
+//  args:
+//      - sock: socket
+//      - fileid: id for file negotiated with server
+//
+//  returns:
+//      - 0, if successful
+//      - -1, if timeout
 
-void sendFin(C150DgmSocket *sock, int fileid) {
+ssize_t sendFin(C150DgmSocket *sock, int fileid) {
+    Packet ipckt;
     Packet opckt(fileid, FIN_FL, NULL_SEQNO, NULL, 0);
+    PacketExpect expect(fileid, FIN_FL, NULL_SEQNO);
+    ssize_t datalen;
 
     c150debug->printf(C150APPLICATION, "sendFin: Sending final FIN");
-    writePacket(sock, &opckt);
+    datalen = writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES);
+
+    return datalen < 0 ? -1 : 0;
 }
 
 
@@ -512,73 +528,6 @@ int sendFile(
     sendFin(sock, initPckt.fileid);
     return 0;
 }
-
-    // int retval = 0; // sendFile return value
-    // int sendVal; // for results of sending packets at each stage
-
-    // file vars
-    // string fullname = makeFileName(dir, fname);
-    // FileHandler fhandler(fullname, fileNastiness);
-
-    // // network vars
-    // Packet ipckt, opckt;
-    // PacketExpect expect;
-    // int fileid;
-    // int checkAttempt = 1; // does nothing for now
-
-    // // check if file was successfully loaded
-    // if (fhandler.getFile() == NULL) {
-    //     c150debug->printf(
-    //         C150APPLICATION,
-    //         "sendFile: File %s could not be loaded. Skipping...",
-    //         fullname.c_str()
-    //     );
-    //     return -3;
-    // }
-
-    // send check request
-    // when filecopy implemented, put in own function, but right now needs more
-    // info than eventually neccessary.
-    // *GRADING << "File: " << fname
-    //          << " requesting end-to-end check, attempt " << checkAttempt
-    //          << endl;
-
-    // opckt = Packet(
-    //     NULL_FILEID, REQ_FL | CHECK_FL, NULL_SEQNO,
-    //     fname.c_str(), fname.length()+1 // +1 for null term
-    // );
-    // expect.fileid = NULL_FILEID;
-    // expect.flags = REQ_FL | CHECK_FL;
-    // if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0) {
-    //     return -1;
-    // } else if (ipckt.flags & NEG_FL) {
-    //     c150debug->printf(
-    //         C150APPLICATION,
-    //         "sendFile: Check request for fname=%s denied",
-    //         fullname.c_str()
-    //     );
-    //     return -2;
-    // } else if (ipckt.flags & POS_FL) {
-    //     fileid = ipckt.fileid;
-    // }
-
-    // // send check result
-    // bool checkResult = checkFile(fullname, Hash(ipckt.data), fileNastiness);
-    // *GRADING << "File: " << fname << " end-to-end check "
-    //          << (checkResult ? "succeeded" : "failed") << ", attempt "
-    //          << checkAttempt << endl;
-    // sendVal = sendCheckResult(sock, fileid, checkResult);
-
-    // if (sendVal == -1) {
-    //     return -1;
-    // } else if (sendVal == -2) { // server failed to rename/remove
-    //     retval = -4;
-    // }
-
-    // // send final fin
-    // sendFin(sock, fileid);
-
-    // return retval;
 
 
 // sendDir

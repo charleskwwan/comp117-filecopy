@@ -9,6 +9,7 @@
 
 
 #include <vector>
+#include <set>
 
 #include "c150dgmsocket.h"
 #include "packet.h"
@@ -64,12 +65,13 @@ struct PacketExpect {
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp);
 void writePacket(C150DgmSocket *sock, const Packet *pcktp);
 bool isExpected(const Packet &pckt, PacketExpect expect);
+bool seqCompare(const Packet &p, const Packet &q);
 int splitFile(
     vector<Packet> &parts, const Packet &hdr,
     const char *file, size_t flen
 );
 size_t mergePackets(
-    vector<Packet> &pckts, int initSeqno,
+    set<Packet> &pckts, int initSeqno,
     char *buf, size_t buflen
 );
 

@@ -39,7 +39,7 @@ enum State {
 
 
 // constants
-const int GIVEUP_TIMEOUT = 10000; // 10s, time until server gives up
+const int GIVEUP_TIMEOUT = 5000; // 5s, time until server gives up
 const char *TMP_SUFFIX = ".TMP";
 
 
@@ -85,6 +85,11 @@ int main(int argc, char *argv[]) {
 
     // check target directory
     if (!isDir(argv[targetDirArg])) {
+        fprintf(
+            stderr,
+            "error: '%s' is not a valid directory\n",
+            argv[targetDirArg]
+        );
         usage(argv[0], 8);
     }
 
@@ -165,13 +170,13 @@ void usage(char *progname, int exitCode) {
 //  return: n/a
 
 void saveFile(
-    vector<Packet> &parts,
+    set<Packet> &parts,
     string fname, int initSeqno, int nastiness
 ) {
     size_t buflen = 0;
 
     // compute size of file
-    for (vector<Packet>::iterator it = parts.begin(); it != parts.end(); it++)
+    for (set<Packet>::iterator it = parts.begin(); it != parts.end(); it++)
         buflen += it->datalen;
 
     // allocate buf with buflen, put file data in it
@@ -268,7 +273,7 @@ Packet checkResults(
         );
         opckt.flags |= NEG_FL;
 
-    } else if ((ipckt.flags & NEG_FL) && remove(tmpname) != 0) {
+    } else if ((ipckt.flags & NEG_FL)) {// && remove(tmpname) != 0) {
         c150debug->printf(
             C150APPLICATION,
             "checkResults: '%s' could not be removed",
@@ -322,7 +327,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     // network vars
     Packet ipckt, opckt; // incoming, outgoing
     map<Packet, Packet> cache; // map packet received to response sent
-    vector<Packet> parts;
+    set<Packet> parts; // store file parts
     int fileid = NULL_FILEID; // for new id, increment
     int initSeqno = NULL_SEQNO + 1; // NEEDSWORKS: make fancy later
 
@@ -340,7 +345,6 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 );
 
             state = IDLE_ST;
-            cache.clear(); // only cache for curren transfer, now done
             continue; // no response needed
 
         } else if (cache.count(ipckt)) {
@@ -353,6 +357,8 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
             );
 
             opckt = cache[ipckt];
+            writePacket(sock, &opckt);
+            continue;
 
         } else if (state != IDLE_ST && ipckt.fileid != fileid) {
             // ipckt with wrong fileid received, just write error packet
@@ -366,6 +372,9 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         switch(state) {
             case IDLE_ST:
                 if (ipckt.flags == (REQ_FL | FILE_FL)) {
+                    cache.clear(); // remove previous transfer cache
+                    parts.clear(); // remove parts for next file
+
                     fname = ipckt.data;
                     fullname = makeFileName(dirname, fname);
                     tmpname = fullname + string(TMP_SUFFIX);
@@ -397,7 +406,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         ipckt.seqno, ipckt.fileid, ipckt.datalen
                     );
 
-                    parts.push_back(ipckt);
+                    parts.insert(ipckt);
                     opckt = Packet(ipckt.fileid, FILE_FL, ipckt.seqno, NULL, 0);
 
                 } else if (ipckt.flags == (REQ_FL | CHECK_FL)) {
@@ -445,8 +454,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     );
 
                     state = IDLE_ST;
-                    cache.clear(); // only cache for curren transfer, now done
-                    continue; // no response needed
+                    opckt= Packet(fileid, FIN_FL, NULL_SEQNO, NULL, 0);
                 }
                 break;
 

@@ -312,10 +312,6 @@ Packet checkResults(
 //      - initially considered switch statement, but need to check current state
 //        against packet flags, so if-else required
 //      - function is LONG, but difficult to shorten
-//
-//  NEEDSWORK: need to implement filecopy parts, for now short circuit to check.
-//             only initial file request should have filename. check request in
-//             future should not, and use fileid instead.
 
 void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     State state = IDLE_ST; // waiting
@@ -375,6 +371,10 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     cache.clear(); // remove previous transfer cache
                     parts.clear(); // remove parts for next file
 
+                    // for some reason this insert is necessary to avoid a
+                    // segfault on nastiness lvl 4 on insert later
+                    cache.insert(pair<Packet, Packet>(ERROR_PCKT, ERROR_PCKT));
+
                     fname = ipckt.data;
                     fullname = makeFileName(dirname, fname);
                     tmpname = fullname + string(TMP_SUFFIX);
@@ -418,8 +418,13 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         ipckt.fileid
                     );
 
-                    saveFile(parts, fullname + TMP_SUFFIX, initSeqno, fileNastiness);
-                    opckt = fillCheckRequest(fileid, fullname + TMP_SUFFIX, fileNastiness);
+                    saveFile(
+                        parts,
+                        fullname + TMP_SUFFIX, initSeqno, fileNastiness
+                    );
+                    opckt = fillCheckRequest(
+                        fileid, fullname + TMP_SUFFIX, fileNastiness
+                    );
                     state = CHECK_ST;
                 }
                 break;
@@ -462,7 +467,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 // at the very least, tell client wrong id
                 if (ipckt.fileid != fileid) opckt.fileid = ipckt.fileid;
         }
-
+        
         // send opckt
         //      - by this pt, no continues so opckt should be sent
         if (opckt.flags != NEG_FL) // cache packets if nonerror

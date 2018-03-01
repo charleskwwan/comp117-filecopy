@@ -80,6 +80,13 @@ int main(int argc, char *argv[]) {
         usage(argv[0], 4);
     }
 
+    // check for valid fileMastiness
+    if (fileNastiness > 5) {
+        fprintf(stderr, "error: <filenastiness> must be in range [0, 5].\n");
+        usage(argv[0], 4);
+    }
+
+
     // check target directory
     dir = argv[srcDirArg];
     if (!isDir(dir.c_str())) {

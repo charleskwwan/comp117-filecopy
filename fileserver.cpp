@@ -115,6 +115,46 @@ int main(int argc, char *argv[]) {
 
         run(sock, argv[targetDirArg], fileNastiness);
 
+        // cout << "reading" << endl;
+
+        // ssize_t srcsize = getFileSize("SRC/data1000");
+        // char *src = new char[srcsize];
+        // NASTYFILE fp(0);
+        // fp.fopen("SRC/data1000", "rb");
+        // fp.fread(src, 1, srcsize);
+        // fp.fclose();
+
+        // for (int i = 0; i < 1000; i++) {
+        //     NASTYFILE fp(5);
+        //     stringstream ss;
+        //     ss << "TARGET/copy" << i;
+            
+        //     fp.fopen(ss.str().c_str(), "wb");
+        //     fp.fwrite(src, 1, srcsize);
+        //     fp.fclose();
+        // }
+
+        // for (int i = 0; i < 1000; i++) {
+        //     NASTYFILE fp(0);
+
+        //     stringstream ss;
+        //     ss << "TARGET/copy" << i;
+
+        //     ssize_t fsize = getFileSize(ss.str());
+        //     char *buf = new char[fsize];
+
+        //     fp.fopen(ss.str().c_str(), "rb");
+        //     fp.fread(buf, 1, fsize);
+        //     fp.fclose();
+        //     // rhandler = FileHandler(ss.str(), 0);
+        //     Hash hash(buf, fsize);
+        //     cout << ss.str() << ": " << hash.str() << endl;
+
+        //     delete [] buf;
+        // }
+
+        // delete [] src;
+
     } catch (C150NetworkException e) {
         // write to debug log
         c150debug->printf(
@@ -188,8 +228,6 @@ void saveFile(
     fhandler.setName(fname);
     fhandler.setFile(buf, buflen);
     fhandler.write();
-
-    delete [] buf;
 }
 
 
@@ -340,6 +378,12 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     "run: Server timed out mid-transfer, client gave up"
                 );
 
+            cache.clear(); // remove previous transfer cache
+            parts.clear(); // remove parts for next file
+
+            // for some reason this insert is necessary to avoid a
+            // segfault on nastiness lvl 4 on insert later
+            // cache[ERROR_PCKT] = ERROR_PCKT;
             state = IDLE_ST;
             continue; // no response needed
 
@@ -368,13 +412,6 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         switch(state) {
             case IDLE_ST:
                 if (ipckt.flags == (REQ_FL | FILE_FL)) {
-                    cache.clear(); // remove previous transfer cache
-                    parts.clear(); // remove parts for next file
-
-                    // for some reason this insert is necessary to avoid a
-                    // segfault on nastiness lvl 4 on insert later
-                    cache.insert(pair<Packet, Packet>(ERROR_PCKT, ERROR_PCKT));
-
                     fname = ipckt.data;
                     fullname = makeFileName(dirname, fname);
                     tmpname = fullname + string(TMP_SUFFIX);
@@ -414,25 +451,31 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     // return checksum
                     c150debug->printf(
                         C150APPLICATION,
-                        "run: Check request received for fileid=%d",
-                        ipckt.fileid
+                        "run: Check request received for fileid=%d, attempt=%d",
+                        ipckt.fileid, ipckt.seqno
                     );
 
-                    saveFile(
-                        parts,
-                        fullname + TMP_SUFFIX, initSeqno, fileNastiness
-                    );
-                    opckt = fillCheckRequest(
-                        fileid, fullname + TMP_SUFFIX, fileNastiness
-                    );
+                    saveFile(parts,fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    opckt = fillCheckRequest(fileid, fullname + TMP_SUFFIX, fileNastiness);
                     state = CHECK_ST;
                 }
                 break;
 
             case CHECK_ST:
-                if (ipckt.flags == (CHECK_FL | POS_FL) ||
+                if (ipckt.flags == (REQ_FL | CHECK_FL)) {
+                    // client found check failed, retry attempt
+                    c150debug->printf(
+                        C150APPLICATION,
+                        "run: Check request received for fileid=%d, attempt=%d",
+                        ipckt.fileid, ipckt.seqno
+                    );
+
+                    saveFile(parts,fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    opckt = fillCheckRequest(fileid, fullname + TMP_SUFFIX, fileNastiness);
+
+                } else if (ipckt.flags == (CHECK_FL | POS_FL) ||
                     ipckt.flags == (CHECK_FL | NEG_FL)) {
-                    // server ready for check results, pos/neg set
+                    // server ready for final check results, pos/neg set
                     c150debug->printf(
                         C150APPLICATION,
                         "run: Check results for fileid=%d received, will %s",
@@ -458,6 +501,8 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         "run: Final FIN received, cleaning up"
                     );
 
+                    cache.clear(); // remove previous transfer cache
+                    parts.clear(); // remove parts for next file
                     state = IDLE_ST;
                     opckt= Packet(fileid, FIN_FL, NULL_SEQNO, NULL, 0);
                 }
@@ -471,7 +516,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         // send opckt
         //      - by this pt, no continues so opckt should be sent
         if (opckt.flags != NEG_FL) // cache packets if nonerror
-            cache.insert(pair<Packet, Packet>(ipckt, opckt));
+            cache[ipckt] = opckt;
         c150debug->printf(
             C150APPLICATION,
             "run: Sending response with fileid=%d, flags=%x, seqno=%d, "

@@ -7,7 +7,13 @@
 #ifndef _FCOPY_FILEHANDLER_H_
 #define _FCOPY_FILEHANDLER_H_
 
+
 #include <string>
+
+#include "c150nastyfile.h"
+
+using namespace std; // for C++ std lib
+using namespace C150NETWORK; // for all comp150 utils
 
 
 // ==========
@@ -43,6 +49,7 @@ protected:
     int nastiness; // nastiness with which to read file
 
     void cleanup();
+    size_t nastyReadPart(NASTYFILE &fp, int offset, size_t nbytes);
     int read(); // read file with fname to buf
 };
 

@@ -7,19 +7,27 @@
 
 #include <cstdlib> // use over new/delete since realloc
 #include <dirent.h>
+#include <algorithm> // min/max
 #include <cerrno>
+#include <cstring>
 #include <string>
 #include <sstream>
-#include <openssl/sha.h>
+#include <map>
 
 #include "c150nastyfile.h"
 #include "c150debug.h"
 
 #include "filehandler.h"
 #include "utils.h"
+#include "hash.h"
 
 using namespace std; // for C++ std lib
 using namespace C150NETWORK; // for all comp150 utils
+
+
+// consts
+static const int RW_TRIES = 100; // number of a tries to read write to ensure
+                                 // correctness
 
 
 // ==========
@@ -34,6 +42,56 @@ void FileHandler::cleanup() {
     if (buf != NULL) free(buf);
     buf = NULL;
     buflen = 0;
+}
+
+
+// nastyReadPart
+//      - reads part of a file in such a way to ensure it is correct
+//
+//  args:
+//      - offset: from beginning of file
+//      - nbytes: number of bytes to read
+//
+//  returns:
+//      - number of bytes successfully read
+//
+//  notes:
+//      - algorithm assumes that most common hash is correct hash
+//      - offset + nbytes must not exceed file size
+//      - buf must already have enough space for entire file
+//
+//  NEEDSWORK: would have loved to pass NASTYFILE fp as arg, but has no default
+//             constructor so not allowed
+
+size_t FileHandler::nastyReadPart(NASTYFILE &fp, int offset, size_t nbytes) {
+    map<Hash, int> ctr; // counts number of times each hash was seen
+    size_t readlen;
+    Hash hash;
+    int maxCnt = 0; // for hash
+
+    // do many reads and compute hashes for each
+    for (int i = 0; i < RW_TRIES; i++) {
+        fp.fseek(offset, SEEK_SET); // go to offset from beginning of file
+        readlen = fp.fread(buf + offset, 1, nbytes);
+
+        hash.set(buf + offset, nbytes);
+        ctr[hash] = ctr.count(hash) ? ctr[hash] + 1 : 0;
+    }
+
+    // find most common hash
+    for (map<Hash, int>::iterator it = ctr.begin(); it != ctr.end(); it++)
+        if (it->second > maxCnt) {
+            maxCnt = it->second;
+            hash = it->first;
+        }
+
+    // read until data with most common hash found
+    do {
+        fp.fseek(offset, SEEK_SET); // go to offset from beginning of file
+        readlen = fp.fread(buf + offset, 1, nbytes);
+    } while (!(Hash(buf + offset, nbytes) == hash));
+
+    return readlen;
 }
 
 
@@ -54,19 +112,27 @@ int FileHandler::read() {
     cleanup();
 
     // check file is valid
-    if (!isFile(fname)) return -1;
+    if (!isFile(fname, nastiness)) return -1;
 
-    ssize_t fsize = getFileSize(fname);
+    size_t fsize = (size_t)getFileSize(fname);
+    int nparts = fsize / MAX_WRITE_LEN + (fsize % MAX_WRITE_LEN ? 1 : 0);
     NASTYFILE fp(nastiness);
     int retval = 0;
 
     buf = (char *)malloc(fsize); // allocate enough for full file
+    buflen = 0;
 
     // try read whole file
     fp.fopen(fname.c_str(), "rb"); // isFile already verified can open
-    buflen = fp.fread(buf, 1, fsize); // how ever much read, set to that
+    for (int i = 0; i < nparts; i++) {
+        int off = i * MAX_WRITE_LEN;
+        size_t nbytes = min((size_t)MAX_WRITE_LEN, fsize - off);
+        buflen += nastyReadPart(fp, off, nbytes);
+    }
 
-    if (buflen != (size_t)fsize) {
+    // fp.fread(buf, 1, fsize); // how ever much read, set to that
+
+    if (buflen != fsize) {
         c150debug->printf(
             C150APPLICATION,
             "readFile: Error reading file %s, errno=%s",

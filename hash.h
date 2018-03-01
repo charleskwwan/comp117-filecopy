@@ -85,6 +85,20 @@ public:
     }
 
 
+    // < overload
+    bool const operator<(const Hash &o) const {
+        if ((hash == NULL && o.hash == NULL) || o.hash == NULL) {
+            return false;
+        } else if (hash == NULL) {
+            return true;
+        } else {
+            return strncmp(
+                (const char *)hash, (const char *)o.hash, HASH_LEN
+            ) < 0;
+        }
+    }
+
+
 private:
     unsigned char hash[20];
 };

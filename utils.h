@@ -84,7 +84,7 @@ size_t mergePackets(
 
 // functions
 bool isDir(string dirname);
-bool isFile(string fname);
+bool isFile(string fname, int nastiness);
 string makeFileName(string dirname, string fname); // make dirname/fname
 ssize_t getFileSize(string fname);
 

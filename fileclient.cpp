@@ -35,6 +35,7 @@ using namespace C150NETWORK; // for all comp150 utils
 // constants
 const int TIMEOUT_DURATION = 50; // 0.05s
 const int MAX_TRIES = 10;
+const int MAX_CHK_ATTEMPTS = 10; // max number of check attempts
 
 
 // fwd declarations
@@ -89,7 +90,7 @@ int main(int argc, char *argv[]) {
     // debugging
     // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
     //                         C150NETWORKDELIVERY | C150FILEDEBUG
-    uint32_t debugClasses = C150APPLICATION;
+    uint32_t debugClasses = C150APPLICATION | C150FILEDEBUG;
     // initDebugLog("fileclientdebug.txt", argv[0], debugClasses);
     initDebugLog(NULL, argv[0], debugClasses);
 
@@ -107,8 +108,6 @@ int main(int argc, char *argv[]) {
 
         c150debug->printf(C150APPLICATION, "Ready to send messages");
 
-        // temp
-        // sendFile(sock, dir, "data10000", fileNastiness);
         sendDir(sock, dir, fileNastiness);
 
         // clean up socket
@@ -325,21 +324,22 @@ int sendFileParts(
 // args:
 //      - sock: socket
 //      - fileid: file id
+//      - attempt: attempt number
 //
 // return:
 //      - Hash of the file, if request successfully sent and acknowledged
 //      - NULL if error during request
 
-Hash sendCheckRequest(C150DgmSocket *sock, int fileid) {
+Hash sendCheckRequest(C150DgmSocket *sock, int fileid, int attempt) {
     Packet ipckt;
-    Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, NULL_SEQNO, NULL, 0);
+    Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, attempt, NULL, 0);
     PacketExpect expect(fileid, REQ_FL | CHECK_FL, NULL_SEQNO);
 
     if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) >= 0) {
         c150debug->printf(
             C150APPLICATION,
-            "sendCheckRequest: Check request for fileid=%u was %s",
-            fileid, ipckt.flags & NEG_FL ? "denied" : "accepted"
+            "sendCheckRequest: Check request for fileid=%u, attempt=%d was %s",
+            fileid, attempt, ipckt.flags & NEG_FL ? "denied" : "accepted"
         );
         Hash hash(ipckt.data);
 
@@ -364,8 +364,6 @@ Hash sendCheckRequest(C150DgmSocket *sock, int fileid) {
 //  notes:
 //      - fname MUST be a file that exists. if not, checkFile will silently
 //        return false.
-//
-//  NEEDSWORK: make checkFile better for higher nastiness levels
 
 bool checkFile(string fname, Hash testhash, int nastiness) {
     FileHandler fhandler(fname, nastiness);
@@ -482,10 +480,6 @@ ssize_t sendFin(C150DgmSocket *sock, int fileid) {
 //  notes:
 //      - if directory or file is invalid, nothing happens
 //      - if network fails, server is assumed down and exception is thrown
-//
-//  NEEDSWORK: implement filecopy, currently only does end to end checking
-//  NEEDSWORK: once filecopy implemented, move check req to own function
-//  NEEDSWORK: make end-to-end check better, currently just one attempt
 
 int sendFile(
     C150DgmSocket *sock, 
@@ -493,7 +487,7 @@ int sendFile(
 ) {
     string fullname = makeFileName(dir, fname);
     Packet initPckt;
-    // int fileid; // to uniquely identify file between client and server
+    bool checkRes;
 
     // send initial file request
     initPckt = sendFileRequest(sock, fname);
@@ -509,15 +503,19 @@ int sendFile(
     }
 
     // send check request after file sent done
-    Hash hash = sendCheckRequest(sock, initPckt.fileid);
-    if (hash == NULL_HASH)
-        return -3;
+    sock -> turnOnTimeouts(1000);
+    for (int i = 0; i < MAX_CHK_ATTEMPTS; i++) {
+        // send check req to get hash from server
+        Hash hash = sendCheckRequest(sock, initPckt.fileid, i);
+        if (hash == NULL_HASH) return -3;
 
-    switch(sendCheckResult(
-        sock,
-        initPckt.fileid,
-        checkFile(fullname, hash, fnastiness)
-    )) {
+        // check file to see if correct; if successful break
+        checkRes = checkFile(fullname, hash, fnastiness);
+        if (checkRes) break;
+    }
+    sock->turnOnTimeouts(TIMEOUT_DURATION);
+
+    switch(sendCheckResult(sock, initPckt.fileid, checkRes)) {
         case -1:
             return -4;
         case -2: 
@@ -566,7 +564,7 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
         if (strcmp(srcFile->d_name, ".") == 0 ||
             strcmp(srcFile->d_name, "..") == 0) {
             continue;
-        } else if (isFile(makeFileName(dirname, srcFile->d_name))) {
+        } else if (isFile(makeFileName(dirname, srcFile->d_name), fileNastiness)) {
             c150debug->printf(
                 C150APPLICATION,
                 "sendDir: Sending file '%s'",

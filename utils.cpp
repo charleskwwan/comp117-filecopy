@@ -294,9 +294,9 @@ bool isDir(string dirname) {
 
 
 // checks if given fname specifies a valid file
-bool isFile(string fname) {
+bool isFile(string fname, int nastiness) {
     struct stat statbuf;
-    NASTYFILE fp(0); // use to check if file can be opened
+    NASTYFILE fp(nastiness); // use to check if file can be opened
 
     if (lstat(fname.c_str(), &statbuf) != 0) {
         c150debug->printf(

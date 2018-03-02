@@ -228,6 +228,22 @@ const char *FileHandler::getFile() {
 }
 
 
+// sets a part of buf and buflen
+//      - if buf is not allocated or there is insufficient space, setFile will
+//        write as much as possible before giving up
+//      - returns the number of bytes written
+
+int FileHandler::setFile(const char *src, size_t srclen, size_t offset) {
+    if (offset >= buflen) {
+        return 0;
+    } else {
+        srclen = min(srclen, buflen - offset);
+        strncpy(buf + offset, src, srclen);
+        return srclen;
+    }
+}
+
+
 // sets buf and buflen
 //      - _buf and _buflen are expected to match
 //      - if say NULL, 6 is provided, FileHandler will have undefined behavior

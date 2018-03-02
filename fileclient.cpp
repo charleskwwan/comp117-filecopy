@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
     // debugging
     // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
     //                         C150NETWORKDELIVERY | C150FILEDEBUG
-    uint32_t debugClasses = C150APPLICATION | C150FILEDEBUG;
+    uint32_t debugClasses = C150APPLICATION;
     // initDebugLog("fileclientdebug.txt", argv[0], debugClasses);
     initDebugLog(NULL, argv[0], debugClasses);
 
@@ -234,6 +234,7 @@ ssize_t writePacketWithRetries(
 //  args:
 //      - sock: socket
 //      - fname: name of file to send
+//      - fsize: size of file to send
 //
 //  returns:
 //      - response packet containing new fileid and initial seqno, if successful
@@ -243,10 +244,10 @@ ssize_t writePacketWithRetries(
 //      - sendFileRequest is not responsible for verifying file exists and can
 //        be sent
 
-Packet sendFileRequest(C150DgmSocket *sock, string fname) {
+Packet sendFileRequest(C150DgmSocket *sock, string fname, size_t fsize) {
     Packet ipckt = ERROR_PCKT; // default if fail
     Packet opckt(
-        NULL_FILEID, REQ_FL | FILE_FL, NULL_SEQNO,
+        NULL_FILEID, REQ_FL | FILE_FL, fsize,
         fname.c_str(), fname.length() + 1 // +1 for null term
     );
     PacketExpect expect(NULL_FILEID, REQ_FL | FILE_FL, NULL_SEQNO);
@@ -293,7 +294,8 @@ int sendFileParts(
     int fileid, int initSeqno
 ) {
     FileHandler fhandler(fname, nastiness);
-    Packet hdr(fileid, FILE_FL, initSeqno, NULL, 0), ipckt;
+    Packet hdr(fileid, FILE_FL, initSeqno, NULL, 0);
+    Packet ipckt;
     vector<Packet> parts;
     int written = 0;
 
@@ -340,7 +342,7 @@ int sendFileParts(
 Hash sendCheckRequest(C150DgmSocket *sock, int fileid, int attempt) {
     Packet ipckt;
     Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, attempt, NULL, 0);
-    PacketExpect expect(fileid, REQ_FL | CHECK_FL, NULL_SEQNO);
+    PacketExpect expect(fileid, REQ_FL | CHECK_FL, attempt);
 
     if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) >= 0) {
         c150debug->printf(
@@ -497,7 +499,7 @@ int sendFile(
     bool checkRes;
 
     // send initial file request
-    initPckt = sendFileRequest(sock, fname);
+    initPckt = sendFileRequest(sock, fname, getFileSize(fullname));
     if (initPckt == ERROR_PCKT) return -1;
 
     // send file
@@ -571,7 +573,10 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
         if (strcmp(srcFile->d_name, ".") == 0 ||
             strcmp(srcFile->d_name, "..") == 0) {
             continue;
-        } else if (isFile(makeFileName(dirname, srcFile->d_name), fileNastiness)) {
+        } else if (isFile(
+                makeFileName(dirname, srcFile->d_name),
+                fileNastiness)
+            ) {
             c150debug->printf(
                 C150APPLICATION,
                 "sendDir: Sending file '%s'",

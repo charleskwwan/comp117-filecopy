@@ -33,6 +33,7 @@ public:
     void setName(string _fname);
 
     const char *getFile();
+    int setFile(const char *src, size_t srclen, size_t offset);
     void setFile(const char *src, size_t srclen);
 
     size_t getLength(); // get length of file

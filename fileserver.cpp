@@ -122,46 +122,6 @@ int main(int argc, char *argv[]) {
 
         run(sock, argv[targetDirArg], fileNastiness);
 
-        // cout << "reading" << endl;
-
-        // ssize_t srcsize = getFileSize("SRC/data1000");
-        // char *src = new char[srcsize];
-        // NASTYFILE fp(0);
-        // fp.fopen("SRC/data1000", "rb");
-        // fp.fread(src, 1, srcsize);
-        // fp.fclose();
-
-        // for (int i = 0; i < 1000; i++) {
-        //     NASTYFILE fp(5);
-        //     stringstream ss;
-        //     ss << "TARGET/copy" << i;
-            
-        //     fp.fopen(ss.str().c_str(), "wb");
-        //     fp.fwrite(src, 1, srcsize);
-        //     fp.fclose();
-        // }
-
-        // for (int i = 0; i < 1000; i++) {
-        //     NASTYFILE fp(0);
-
-        //     stringstream ss;
-        //     ss << "TARGET/copy" << i;
-
-        //     ssize_t fsize = getFileSize(ss.str());
-        //     char *buf = new char[fsize];
-
-        //     fp.fopen(ss.str().c_str(), "rb");
-        //     fp.fread(buf, 1, fsize);
-        //     fp.fclose();
-        //     // rhandler = FileHandler(ss.str(), 0);
-        //     Hash hash(buf, fsize);
-        //     cout << ss.str() << ": " << hash.str() << endl;
-
-        //     delete [] buf;
-        // }
-
-        // delete [] src;
-
     } catch (C150NetworkException e) {
         // write to debug log
         c150debug->printf(
@@ -247,6 +207,7 @@ void saveFile(
 //
 //  args:
 //      - fileid: associated with file to check
+//      - attempt: check req attempt
 //      - fname: full file name to check
 //      - nastiness: with which to read file
 //
@@ -257,7 +218,7 @@ void saveFile(
 //  notes:
 //      - file is assumed to exist
 
-Packet fillCheckRequest(int fileid, string fname, int nastiness) {
+Packet fillCheckRequest(int fileid, int attempt, string fname, int nastiness) {
     FileHandler fhandler(fname, nastiness);
     Hash fhash;
 
@@ -267,7 +228,7 @@ Packet fillCheckRequest(int fileid, string fname, int nastiness) {
             "fillCheckRequest: File fname=%s could not be opened",
             fname.c_str()
         );
-        return Packet(fileid, REQ_FL | CHECK_FL | NEG_FL, NULL_SEQNO, NULL, 0);
+        return Packet(fileid, REQ_FL | CHECK_FL | NEG_FL, attempt, NULL, 0);
 
     } else {
         fhash.set(fhandler.getFile(), fhandler.getLength());
@@ -279,8 +240,9 @@ Packet fillCheckRequest(int fileid, string fname, int nastiness) {
         );
         *GRADING << "File: " << fname << " computed checksum ["
                  << fhash.str() << "]" << endl;
+
         return Packet(
-            fileid, REQ_FL | CHECK_FL | POS_FL, NULL_SEQNO,
+            fileid, REQ_FL | CHECK_FL | POS_FL, attempt,
             (const char *)fhash.get(), HASH_LEN
         );
     }
@@ -318,7 +280,7 @@ Packet checkResults(
         );
         opckt.flags |= NEG_FL;
 
-    } else if ((ipckt.flags & NEG_FL)) {// && remove(tmpname) != 0) {
+    } else if ((ipckt.flags & NEG_FL) && remove(tmpname) != 0) {
         c150debug->printf(
             C150APPLICATION,
             "checkResults: '%s' could not be removed",
@@ -387,10 +349,6 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
 
             cache.clear(); // remove previous transfer cache
             parts.clear(); // remove parts for next file
-
-            // for some reason this insert is necessary to avoid a
-            // segfault on nastiness lvl 4 on insert later
-            // cache[ERROR_PCKT] = ERROR_PCKT;
             state = IDLE_ST;
             continue; // no response needed
 
@@ -462,8 +420,11 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         ipckt.fileid, ipckt.seqno
                     );
 
-                    saveFile(parts,fullname + TMP_SUFFIX, initSeqno, fileNastiness);
-                    opckt = fillCheckRequest(fileid, fullname + TMP_SUFFIX, fileNastiness);
+                    saveFile(parts, fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    opckt = fillCheckRequest(
+                        fileid, ipckt.seqno,
+                        fullname + TMP_SUFFIX, fileNastiness
+                    );
                     state = CHECK_ST;
                 }
                 break;
@@ -477,8 +438,11 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         ipckt.fileid, ipckt.seqno
                     );
 
-                    saveFile(parts,fullname + TMP_SUFFIX, initSeqno, fileNastiness);
-                    opckt = fillCheckRequest(fileid, fullname + TMP_SUFFIX, fileNastiness);
+                    saveFile(parts, fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    opckt = fillCheckRequest(
+                        fileid, ipckt.seqno,
+                        fullname + TMP_SUFFIX, fileNastiness
+                    );
 
                 } else if (ipckt.flags == (CHECK_FL | POS_FL) ||
                     ipckt.flags == (CHECK_FL | NEG_FL)) {
@@ -524,12 +488,13 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         //      - by this pt, no continues so opckt should be sent
         if (opckt.flags != NEG_FL) // cache packets if nonerror
             cache[ipckt] = opckt;
-        c150debug->printf(
-            C150APPLICATION,
-            "run: Sending response with fileid=%d, flags=%x, seqno=%d, "
-            "datalen=%d",
-            opckt.fileid, opckt.flags & 0xff, opckt.seqno, opckt.datalen
-        );
+
+        // c150debug->printf(
+        //     C150APPLICATION,
+        //     "run: Sending response with fileid=%d, flags=%x, seqno=%d, "
+        //     "datalen=%d",
+        //     opckt.fileid, opckt.flags & 0xff, opckt.seqno, opckt.datalen
+        // );
         writePacket(sock, &opckt);
     }
 }

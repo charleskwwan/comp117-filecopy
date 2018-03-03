@@ -98,18 +98,16 @@ struct __attribute__((__packed__)) Packet {
         if (fileid < o.fileid) return true;
         if (fileid > o.fileid) return false;
 
+        if (flags < o.flags) return true;
+        if (flags > o.flags) return false;
+
         if (seqno < o.seqno) return true;
         if (seqno > o.seqno) return false;
 
         if (datalen < o.datalen) return true;
         if (datalen > o.datalen) return false;
 
-        int cmpval = strncmp(data, o.data, datalen);
-        if (cmpval < 0) return true;
-        if (cmpval > 0) return false;
-
-        if (flags < o.flags) return true;
-        
+        if (strncmp(data, o.data, min(datalen, o.datalen)) < 0) return true;
         return false;
     }
 };

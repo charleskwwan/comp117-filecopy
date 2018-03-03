@@ -158,13 +158,6 @@ bool isExpected(const Packet &pckt, PacketExpect expect) {
 }
 
 
-// compares p and q by seqno
-
-bool seqCompare(const Packet &p, const Packet &q) {
-    return p.seqno < q.seqno;
-}
-
-
 // splitFile
 //      - splits a file into multiple packets
 //

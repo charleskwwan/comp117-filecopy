@@ -65,7 +65,6 @@ struct PacketExpect {
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp);
 void writePacket(C150DgmSocket *sock, const Packet *pcktp);
 bool isExpected(const Packet &pckt, PacketExpect expect);
-bool seqCompare(const Packet &p, const Packet &q);
 int splitFile(
     vector<Packet> &parts, const Packet &hdr,
     const char *file, size_t flen

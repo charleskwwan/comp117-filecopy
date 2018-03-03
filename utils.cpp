@@ -111,13 +111,15 @@ void printPacket(Packet &pckt, FILE *fp) {
 //      - -1 if timed out
 
 ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
-    ssize_t readlen = sock -> read((char*)pcktp, MAX_PCKT_LEN);
+    Packet tmp;
+    ssize_t readlen = sock -> read((char*)&tmp, MAX_PCKT_LEN);
 
     if (sock -> timedout()) {
         c150debug->printf(C150APPLICATION, "readPacket: Timeout occurred");
         return -1;
     } else {
-        pcktp->data[readlen - HDR_LEN + 1] = '\0'; // ensure null terminated
+        tmp.data[readlen - HDR_LEN + 1] = '\0'; // ensure null terminated
+        *pcktp = tmp;
         return readlen - HDR_LEN;
     }
 }

@@ -307,12 +307,12 @@ int sendFileParts(
         PacketExpect expect(fileid, FILE_FL, initSeqno + written);
         Packet opckt = *it;
 
-        c150debug->printf(
-            C150APPLICATION,
-            "sendFileParts: Sending file packet seqno=%d for fname=%s, "
-            "fileid=%d, with datalen=%u",
-            opckt.seqno, fname.c_str(), opckt.fileid, opckt.datalen
-        );
+        // c150debug->printf(
+        //     C150APPLICATION,
+        //     "sendFileParts: Sending file packet seqno=%d for fname=%s, "
+        //     "fileid=%d, with datalen=%u",
+        //     opckt.seqno, fname.c_str(), opckt.fileid, opckt.datalen
+        // );
 
         if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0)
             return -1;
@@ -582,7 +582,20 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
                 "sendDir: Sending file '%s'",
                 srcFile->d_name
             );
-            sendFile(sock, dirname, srcFile->d_name, fileNastiness);
+            
+            if (sendFile(sock, dirname, srcFile->d_name, fileNastiness) == 0) {
+                c150debug->printf(
+                    C150APPLICATION,
+                    "sendDir: File '%s' was successfully sent",
+                    srcFile->d_name
+                );
+            } else {
+                c150debug->printf(
+                    C150APPLICATION,
+                    "sendDir: File '%s' could not be transfered",
+                    srcFile->d_name
+                );
+            }
         } else {
             c150debug->printf(
                 C150APPLICATION,

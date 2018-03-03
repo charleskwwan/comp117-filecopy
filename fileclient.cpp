@@ -33,14 +33,19 @@ using namespace C150NETWORK; // for all comp150 utils
 
 
 // constants
-const int TIMEOUT_DURATION = 50; // 0.05s
-const int MAX_TRIES = 10;
+const int TIMEOUT_DURATION = 10; // 0.01s
+const int MAX_TRIES = 10; // number of tries on write
 const int MAX_CHK_ATTEMPTS = 10; // max number of check attempts
+const int MAX_FILE_TRIES = 5; // number of attempts to try a file
 
 
 // fwd declarations
 void usage(char *progname, int exitCode);
-int sendFile(C150DgmSocket *sock, string dir, string fname, int fnastiness);
+int sendFile(
+    C150DgmSocket *sock,
+    string dir, string fname, int fnastiness,
+    int attempt
+);
 void sendDir(C150DgmSocket *sock, string dir, int fileNastiness);
 
 
@@ -95,10 +100,7 @@ int main(int argc, char *argv[]) {
     }
 
     // debugging
-    // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
-    //                         C150NETWORKDELIVERY | C150FILEDEBUG
-    uint32_t debugClasses = C150APPLICATION;
-    // initDebugLog("fileclientdebug.txt", argv[0], debugClasses);
+    uint32_t debugClasses = C150APPLICATION | PACKET_DEBUG;
     initDebugLog(NULL, argv[0], debugClasses);
 
     try {
@@ -307,12 +309,12 @@ int sendFileParts(
         PacketExpect expect(fileid, FILE_FL, initSeqno + written);
         Packet opckt = *it;
 
-        // c150debug->printf(
-        //     C150APPLICATION,
-        //     "sendFileParts: Sending file packet seqno=%d for fname=%s, "
-        //     "fileid=%d, with datalen=%u",
-        //     opckt.seqno, fname.c_str(), opckt.fileid, opckt.datalen
-        // );
+        c150debug->printf(
+            PACKET_DEBUG,
+            "sendFileParts: Sending file packet seqno=%d for fname=%s, "
+            "fileid=%d, with datalen=%u",
+            opckt.seqno, fname.c_str(), opckt.fileid, opckt.datalen
+        );
 
         if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) < 0)
             return -1;
@@ -343,6 +345,8 @@ Hash sendCheckRequest(C150DgmSocket *sock, int fileid, int attempt) {
     Packet ipckt;
     Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, attempt, NULL, 0);
     PacketExpect expect(fileid, REQ_FL | CHECK_FL, attempt);
+
+    cout << "here" << endl;
 
     if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) >= 0) {
         c150debug->printf(
@@ -477,6 +481,7 @@ ssize_t sendFin(C150DgmSocket *sock, int fileid) {
 //      - dir: name of file directory
 //      - fname: name of file
 //      - fnastiness: nastiness with which to send file
+//      - attempt: current attempt number of file
 //
 //  return:
 //      - 0, success
@@ -485,6 +490,7 @@ ssize_t sendFin(C150DgmSocket *sock, int fileid) {
 //      - -3, check request denied
 //      - -4, check result failed due to timeout
 //      - -5, check result failed due to failed rename/remove on server
+//      - -6, checks exhausted, file could not be transferred
 //
 //  notes:
 //      - if directory or file is invalid, nothing happens
@@ -492,7 +498,8 @@ ssize_t sendFin(C150DgmSocket *sock, int fileid) {
 
 int sendFile(
     C150DgmSocket *sock, 
-    string dir, string fname, int fnastiness
+    string dir, string fname, int fnastiness,
+    int attempt
 ) {
     string fullname = makeFileName(dir, fname);
     Packet initPckt;
@@ -502,7 +509,10 @@ int sendFile(
     initPckt = sendFileRequest(sock, fname, getFileSize(fullname));
     if (initPckt == ERROR_PCKT) return -1;
 
-    // send file
+    *GRADING << "File: " << fname << ", beginning transmission, attempt "
+             << attempt << endl;
+
+    // send file in parts
     if (sendFileParts(
             sock,
             fullname, fnastiness,
@@ -511,19 +521,35 @@ int sendFile(
         return -2;
     }
 
+    *GRADING << "File: " << fname << " transmission complete, waiting for "
+                 << "end-to-end check, attempt " << attempt << endl;
+
     // send check request after file sent done
-    sock -> turnOnTimeouts(1000);
+    sock -> turnOnTimeouts(1000); // wait longer since hashing can take awhile
     for (int i = 0; i < MAX_CHK_ATTEMPTS; i++) {
         // send check req to get hash from server
         Hash hash = sendCheckRequest(sock, initPckt.fileid, i);
-        if (hash == NULL_HASH) return -3;
+        if (hash == NULL_HASH) {
+            sock -> turnOnTimeouts(TIMEOUT_DURATION);
+            return -3;
+        }
 
         // check file to see if correct; if successful break
         checkRes = checkFile(fullname, hash, fnastiness);
-        if (checkRes) break;
+        if (checkRes) {
+            break;
+        } else {
+            *GRADING << "File: " << fname << "end-to-end check failed, "
+                     << "retrying..." << endl;
+        }
     }
-    sock->turnOnTimeouts(TIMEOUT_DURATION);
+    sock->turnOnTimeouts(TIMEOUT_DURATION); // reset timeouts
 
+    *GRADING << "File: " << fname << " end-to-end check "
+             << (checkRes ? "succeeded" : "failed despite retries")
+             << " attempt " << attempt << endl;
+
+    // send results back to server for rename/remove
     switch(sendCheckResult(sock, initPckt.fileid, checkRes)) {
         case -1:
             return -4;
@@ -532,8 +558,9 @@ int sendFile(
             return -5;
     }
 
+    // send final fin to complete transfer
     sendFin(sock, initPckt.fileid);
-    return 0;
+    return checkRes ? 0 : -6;
 }
 
 
@@ -544,16 +571,14 @@ int sendFile(
 //  args:
 //      - sock: socket
 //      - dir: name of directory
-//      - fileNastiness: with which to send files
+//      - fnastiness: with which to send files
 //
 //  returns: n/a
 //
 //  notes:
-//      - if file send fails, just move on to next file
-//
-//  NEEDSWORK: add retry mechanism for failed files
+//      - if file send fails,will try up to 4 more times, then give up
 
-void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
+void sendDir(C150DgmSocket *sock, string dirname, int fnastiness) {
     // check to make sure directory can be opened
     if (!isDir(dirname)) {
         c150debug->printf(
@@ -566,6 +591,7 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
 
     DIR *dir = opendir(dirname.c_str()); // will succeed since checked
     struct dirent *srcFile; // directory entry for source file
+    int sendRes = 0;
 
     // loop thru all files, and send all valid nondir files
     while ((srcFile = readdir(dir)) != NULL) {
@@ -573,29 +599,32 @@ void sendDir(C150DgmSocket *sock, string dirname, int fileNastiness) {
         if (strcmp(srcFile->d_name, ".") == 0 ||
             strcmp(srcFile->d_name, "..") == 0) {
             continue;
-        } else if (isFile(
-                makeFileName(dirname, srcFile->d_name),
-                fileNastiness)
-            ) {
+        } else if (isFile(makeFileName(dirname, srcFile->d_name), fnastiness)) {
+            // try sending file up to max tries
+            for (int i = 0; i < MAX_FILE_TRIES; i++) {
+                c150debug->printf(
+                    C150APPLICATION,
+                    "sendDir: %sing file '%s', attempt=%d",
+                    i > 0 ? "Retry" : "Send", srcFile->d_name, i
+                );
+
+                sendRes = sendFile(
+                    sock, dirname, srcFile->d_name,
+                    fnastiness, i
+                );
+                if (sendRes == 0) break;
+            }
+
             c150debug->printf(
                 C150APPLICATION,
-                "sendDir: Sending file '%s'",
-                srcFile->d_name
+                "sendDir: File '%s' %s transferred",
+                srcFile->d_name, 
+                sendRes == 0 ? "was successfully" : "could not be"
             );
-            
-            if (sendFile(sock, dirname, srcFile->d_name, fileNastiness) == 0) {
-                c150debug->printf(
-                    C150APPLICATION,
-                    "sendDir: File '%s' was successfully sent",
-                    srcFile->d_name
-                );
-            } else {
-                c150debug->printf(
-                    C150APPLICATION,
-                    "sendDir: File '%s' could not be transfered",
-                    srcFile->d_name
-                );
-            }
+
+            if (sendRes < 0)
+                *GRADING << "File: " << srcFile->d_name << ", max transmission "
+                         << "retries attempted, giving up..." << endl;
         } else {
             c150debug->printf(
                 C150APPLICATION,

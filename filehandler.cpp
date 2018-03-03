@@ -59,13 +59,10 @@ void FileHandler::cleanup() {
 //      - algorithm assumes that most common hash is correct hash
 //      - offset + nbytes must not exceed file size
 //      - buf must already have enough space for entire file
-//
-//  NEEDSWORK: would have loved to pass NASTYFILE fp as arg, but has no default
-//             constructor so not allowed
 
 size_t FileHandler::nastyReadPart(NASTYFILE &fp, int offset, size_t nbytes) {
     map<Hash, int> ctr; // counts number of times each hash was seen
-    size_t readlen;
+    size_t readlen = 0;
     Hash hash;
     int maxCnt = 0; // for hash
 
@@ -129,8 +126,6 @@ int FileHandler::read() {
         size_t nbytes = min((size_t)MAX_WRITE_LEN, fsize - off);
         buflen += nastyReadPart(fp, off, nbytes);
     }
-
-    // fp.fread(buf, 1, fsize); // how ever much read, set to that
 
     if (buflen != fsize) {
         c150debug->printf(
@@ -238,7 +233,7 @@ int FileHandler::setFile(const char *src, size_t srclen, size_t offset) {
         return 0;
     } else {
         srclen = min(srclen, buflen - offset);
-        strncpy(buf + offset, src, srclen);
+        memcpy(buf + offset, src, srclen);
         return srclen;
     }
 }
@@ -252,7 +247,7 @@ int FileHandler::setFile(const char *src, size_t srclen, size_t offset) {
 void FileHandler::setFile(const char *src, size_t srclen) {
     cleanup();
     buf = (char *)malloc(srclen);
-    strncpy(buf, src, srclen);
+    memcpy(buf, src, srclen);
     buflen = srclen;
 }
 
@@ -290,6 +285,7 @@ int FileHandler::write() {
     if (buf == NULL) return -1; // check if file data exists
 
     NASTYFILE fp(nastiness);
+    int nparts = buflen / MAX_WRITE_LEN + (buflen % MAX_WRITE_LEN ? 1 : 0);
     int retval = 0;
 
     // open file in wb to avoid line end munging
@@ -303,13 +299,20 @@ int FileHandler::write() {
     }
 
     // try to write all file data
-    if (fp.fwrite(buf, 1, buflen) != buflen) {
-        c150debug->printf(
-            C150APPLICATION,
-            "FileHandler::write: Error writing file %s, errno=%s",
-            fname.c_str(), strerror(errno)
-        );
-        retval = errno; // still should close fp
+    for (int i = 0; i < nparts; i++) {
+        int off = i * MAX_WRITE_LEN;
+        size_t nbytes = min((size_t)MAX_WRITE_LEN, buflen - off);
+
+        fp.fseek(off, SEEK_SET);
+        if (fp.fwrite(buf + off, 1, nbytes) != nbytes) {
+            c150debug->printf(
+                C150APPLICATION,
+                "FileHandler::write: Error writing file %s, errno=%s",
+                fname.c_str(), strerror(errno)
+            );
+            retval = errno; // still should close fp
+            break;
+        }
     }
 
     // close file - unlikely to fail but check anyway

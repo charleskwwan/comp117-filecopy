@@ -39,7 +39,7 @@ enum State {
 
 
 // constants
-const int GIVEUP_TIMEOUT = 5000; // 5s, time until server gives up
+const int GIVEUP_TIMEOUT = 10000; // 10s, time until server gives up
 const char *TMP_SUFFIX = ".TMP";
 
 
@@ -101,10 +101,7 @@ int main(int argc, char *argv[]) {
     }
 
     // debugging
-    // uint32_t debugClasses = C150APPLICATION | C150NETWORKTRAFFIC |
-    //                         C150NETWORKDELIVERY | C150FILEDEBUG
-    uint32_t debugClasses = C150APPLICATION;
-    // initDebugLog("fileclientdebug.txt", argv[0], debugClasses);
+    uint32_t debugClasses = C150APPLICATION | PACKET_DEBUG;
     initDebugLog(NULL, argv[0], debugClasses);
     c150debug->setIndent("    "); // if merge client/server logs, server stuff
                                   // will be indented
@@ -194,6 +191,7 @@ void saveFile(
     FileHandler fhandler(nastiness);
     fhandler.setName(fname);
     fhandler.setFile(buf, buflen);
+    delete [] buf;
     fhandler.write();
 }
 
@@ -219,7 +217,7 @@ void saveFile(
 //      - file is assumed to exist
 
 Packet fillCheckRequest(int fileid, int attempt, string fname, int nastiness) {
-    FileHandler fhandler(fname, nastiness);
+    FileHandler fhandler(fname, nastiness); // read file
     Hash fhash;
 
     if (fhandler.getFile() == NULL) {
@@ -305,6 +303,20 @@ Packet checkResults(
 //      - loop continuously receives packets and responds to clients based on
 //        the current state (checking file? transferring file? etc.)
 //
+//      - basic idea (stateful):
+//          - idle state:
+//              - wait for file request
+//              - on file request, set up state and move to file state
+//          - file state:
+//              - receive and store file parts
+//              - on check request, save file, compute hash, and move to check
+//                state
+//          - check state:
+//              - on check results (from client), rename/remove file and move
+//                fin state
+//          - fin state:
+//              - on fin message, clear state and move to idle state 
+//
 //  args:
 //      - sock: socket
 //      - targetDir: name of target directory
@@ -316,8 +328,6 @@ Packet checkResults(
 //      - only serves one file transfer at a time currently
 //
 //  notes:
-//      - initially considered switch statement, but need to check current state
-//        against packet flags, so if-else required
 //      - function is LONG, but difficult to shorten
 
 void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
@@ -332,7 +342,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
     map<Packet, Packet> cache; // map packet received to response sent
     set<Packet> parts; // store file parts
     int fileid = NULL_FILEID; // for new id, increment
-    int initSeqno = NULL_SEQNO + 1; // NEEDSWORKS: make fancy later
+    int initSeqno = NULL_SEQNO + 1;
 
     // main loop
     while (1) {
@@ -355,7 +365,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         } else if (cache.count(ipckt)) {
             // previously seen packet found, assume client retry
             c150debug->printf(
-                C150APPLICATION,
+                PACKET_DEBUG,
                 "run: Retry packet with fileid=%d, flags=%x, seqno=%d, and "
                 "datalen=%d received. Resending previous response",
                 ipckt.fileid, ipckt.flags & 0xff, ipckt.seqno, ipckt.datalen
@@ -388,7 +398,8 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         "fileid=%d",
                         fname.c_str(), fileid
                     );
-                    // NEEDSWORK: add grading statement
+                    *GRADING << "File: " << fname << " starting to receive file"
+                             << endl;
 
                     opckt = Packet(
                         fileid, ipckt.flags | POS_FL, initSeqno,
@@ -402,7 +413,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                 if (ipckt.flags == FILE_FL) {
                     // receive file parts one at a time, and store in parts
                     c150debug->printf(
-                        C150APPLICATION,
+                        PACKET_DEBUG,
                         "run: File packet seqno=%d received for fileid=%d, "
                         "with datalen=%u",
                         ipckt.seqno, ipckt.fileid, ipckt.datalen
@@ -419,8 +430,10 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         "run: Check request received for fileid=%d, attempt=%d",
                         ipckt.fileid, ipckt.seqno
                     );
+                    *GRADING << "File: " << fname << " received, beginning "
+                             << "end-to-end check" << endl;
 
-                    saveFile(parts, fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    saveFile(parts, tmpname, initSeqno, fileNastiness);
                     opckt = fillCheckRequest(
                         fileid, ipckt.seqno,
                         fullname + TMP_SUFFIX, fileNastiness
@@ -438,7 +451,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                         ipckt.fileid, ipckt.seqno
                     );
 
-                    saveFile(parts, fullname + TMP_SUFFIX, initSeqno, fileNastiness);
+                    saveFile(parts, tmpname, initSeqno, fileNastiness);
                     opckt = fillCheckRequest(
                         fileid, ipckt.seqno,
                         fullname + TMP_SUFFIX, fileNastiness
@@ -459,7 +472,7 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
                     state = FIN_ST;
                     opckt = checkResults( // rename/remove based on results
                         ipckt, fileid,
-                        fullname.c_str(), (fullname + TMP_SUFFIX).c_str()
+                        fullname.c_str(), tmpname.c_str()
                     );
                 }   
                 break;
@@ -489,12 +502,12 @@ void run(C150DgmSocket *sock, const char *targetDir, int fileNastiness) {
         if (opckt.flags != NEG_FL) // cache packets if nonerror
             cache[ipckt] = opckt;
 
-        // c150debug->printf(
-        //     C150APPLICATION,
-        //     "run: Sending response with fileid=%d, flags=%x, seqno=%d, "
-        //     "datalen=%d",
-        //     opckt.fileid, opckt.flags & 0xff, opckt.seqno, opckt.datalen
-        // );
+        c150debug->printf(
+            PACKET_DEBUG,
+            "run: Sending response with fileid=%d, flags=%x, seqno=%d, "
+            "datalen=%d",
+            opckt.fileid, opckt.flags & 0xff, opckt.seqno, opckt.datalen
+        );
         writePacket(sock, &opckt);
     }
 }

@@ -37,7 +37,7 @@ public:
     void setFile(const char *src, size_t srclen);
 
     size_t getLength(); // get length of file
-    void setLength(size_t _buflen);
+    void setLength(size_t _buflen); // set length of file
 
     int write(); // write current buf to current fname
 

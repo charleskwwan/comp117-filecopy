@@ -76,7 +76,7 @@ struct __attribute__((__packed__)) Packet {
             datalen = 0;
         } else {
             datalen = min(_datalen, MAX_WRITE_LEN);
-            strncpy(data, _data, datalen);
+            memcpy(data, _data, datalen);
         }
     }
 
@@ -86,7 +86,7 @@ struct __attribute__((__packed__)) Packet {
                flags == other.flags &&
                seqno == other.seqno &&
                datalen == other.datalen &&
-               strncmp(data, other.data, datalen) == 0;
+               memcmp(data, other.data, datalen) == 0;
     }
 
 
@@ -107,7 +107,7 @@ struct __attribute__((__packed__)) Packet {
         if (datalen < o.datalen) return true;
         if (datalen > o.datalen) return false;
 
-        if (strncmp(data, o.data, min(datalen, o.datalen)) < 0) return true;
+        if (memcmp(data, o.data, min(datalen, o.datalen)) < 0) return true;
         return false;
     }
 };

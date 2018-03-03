@@ -38,6 +38,7 @@ void printPacket(Packet &pckt, FILE *fp);
 
 // consts
 const Packet ERROR_PCKT(NULL_FILEID, NEG_FL, NULL_SEQNO, NULL, 0);
+const int PACKET_DEBUG = 0x00000001;
 
 
 // PacketExpect

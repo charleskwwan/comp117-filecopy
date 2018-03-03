@@ -115,7 +115,7 @@ ssize_t readPacket(C150DgmSocket *sock, Packet *pcktp) {
     ssize_t readlen = sock -> read((char*)&tmp, MAX_PCKT_LEN);
 
     if (sock -> timedout()) {
-        c150debug->printf(C150APPLICATION, "readPacket: Timeout occurred");
+        c150debug->printf(PACKET_DEBUG, "readPacket: Timeout occurred");
         return -1;
     } else {
         tmp.data[readlen - HDR_LEN + 1] = '\0'; // ensure null terminated
@@ -235,7 +235,7 @@ size_t mergePackets(
             continue;
         } else {
             writelen = min(buflen - offset, (size_t)it->datalen);
-            strncpy(buf + offset, it->data, writelen);
+            memcpy(buf + offset, it->data, writelen);
             written += writelen;
         }
     }

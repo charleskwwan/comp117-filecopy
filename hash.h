@@ -1,6 +1,6 @@
 // hash.h
 //
-// Defines hash class
+// Defines hash class - stores a sha1 hash
 //
 // By: Justin Jo and Charles Wan
 
@@ -56,7 +56,7 @@ public:
         if (_hash == NULL) {
             set(NULL, 0); // set to all '\0'
         } else {
-            strncpy((char *)hash, _hash, HASH_LEN);
+            memcpy((char *)hash, _hash, HASH_LEN);
         }
     }
 
@@ -65,7 +65,7 @@ public:
     string str() {
         char s[2 * HASH_LEN + 1]; // 2 hex per hash char, +1 null term
         for (int i = 0; i < HASH_LEN; i++)
-            sprintf(s+ 2 * i, "%02x", (unsigned int)hash[i]);
+            sprintf(s + 2 * i, "%02x", (unsigned int)hash[i] & 0xff);
         s[40] = '\0'; // ensure null term
         return s;
     }
@@ -78,7 +78,7 @@ public:
         } else if (hash == NULL || o.hash == NULL) {
             return false;
         } else {
-            return strncmp(
+            return memcmp(
                 (const char *)hash, (const char *)o.hash, HASH_LEN
             ) == 0;
         }
@@ -92,7 +92,7 @@ public:
         } else if (hash == NULL) {
             return true;
         } else {
-            return strncmp(
+            return memcmp(
                 (const char *)hash, (const char *)o.hash, HASH_LEN
             ) < 0;
         }

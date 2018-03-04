@@ -13,6 +13,10 @@
 //
 // By: Justin Jo and Charles Wan
 
+// define debug file, can be set by compiler
+#ifndef DEBUG_FILE
+#define DEBUG_FILE "fileclientdebug.txt"
+#endif
 
 #include <iostream>
 #include <cstring>
@@ -101,7 +105,7 @@ int main(int argc, char *argv[]) {
 
     // debugging
     uint32_t debugClasses = C150APPLICATION | PACKET_DEBUG;
-    initDebugLog(NULL, argv[0], debugClasses);
+    initDebugLog(DEBUG_FILE, argv[0], debugClasses);
 
     try {
         // create socket
@@ -345,8 +349,6 @@ Hash sendCheckRequest(C150DgmSocket *sock, int fileid, int attempt) {
     Packet ipckt;
     Packet opckt = Packet(fileid, REQ_FL | CHECK_FL, attempt, NULL, 0);
     PacketExpect expect(fileid, REQ_FL | CHECK_FL, attempt);
-
-    cout << "here" << endl;
 
     if (writePacketWithRetries(sock, &opckt, &ipckt, expect, MAX_TRIES) >= 0) {
         c150debug->printf(

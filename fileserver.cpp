@@ -9,6 +9,11 @@
 //
 //  By: Justin Jo and Charles Wan
 
+// define debug file, can be set by compiler
+#ifndef DEBUG_FILE
+#define DEBUG_FILE "fileserverdebug.txt"
+#endif
+
 
 #include <iostream>
 #include <cstdio>
@@ -102,7 +107,7 @@ int main(int argc, char *argv[]) {
 
     // debugging
     uint32_t debugClasses = C150APPLICATION | PACKET_DEBUG;
-    initDebugLog(NULL, argv[0], debugClasses);
+    initDebugLog(DEBUG_FILE, argv[0], debugClasses);
     c150debug->setIndent("    "); // if merge client/server logs, server stuff
                                   // will be indented
 

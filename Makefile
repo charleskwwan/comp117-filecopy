@@ -46,7 +46,9 @@ C150INCLUDES = $(C150LIB)c150dgmsocket.h $(C150LIB)c150nastydgmsocket.h $(C150LI
 FILEINCLUDES = utils.h packet.h filehandler.h
 INCLUDES = $(C150INCLUDES) $(FILEINCLUDES)
 
-all: nastyfiletest makedatafile sha1test fileserver fileclient
+all: fileserver fileclient
+
+console: fileserver-console fileclient-console
 
 fileserver: fileserver.o $(C150AR) $(INCLUDES)
 	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp utils.cpp filehandler.cpp $(C150AR) $(SECFLAGS)
@@ -54,36 +56,15 @@ fileserver: fileserver.o $(C150AR) $(INCLUDES)
 fileclient: fileclient.o $(C150AR) $(INCLUDES)
 	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp utils.cpp filehandler.cpp $(C150AR) $(SECFLAGS)
 
-#
-# Build the nastyfiletest sample
-#
-nastyfiletest: nastyfiletest.cpp  $(C150AR) $(INCLUDES)
-	$(CPP) -o nastyfiletest  $(CPPFLAGS) nastyfiletest.cpp $(C150AR) 
+fileserver-console: fileserver.o $(C150AR) $(INCLUDES)
+	$(CPP) -o fileserver $(CPPFLAGS) fileserver.cpp utils.cpp filehandler.cpp $(C150AR) $(SECFLAGS) -DDEBUG_FILE=NULL
 
-#
-# Build the sha1test
-#
-sha1test: sha1test.cpp
-	$(CPP) -o sha1test sha1test.cpp $(SECFLAGS)
-
-#
-# Build the makedatafile 
-#
-makedatafile: makedatafile.cpp
-	$(CPP) -o makedatafile makedatafile.cpp 
-
-#
-# To get any .o, compile the corresponding .cpp
-#
-%.o:%.cpp  $(INCLUDES)
-	$(CPP) -c  $(CPPFLAGS) $< 
-
+fileclient-console: fileclient.o $(C150AR) $(INCLUDES)
+	$(CPP) -o fileclient $(CPPFLAGS) fileclient.cpp utils.cpp filehandler.cpp $(C150AR) $(SECFLAGS) -DDEBUG_FILE=NULL
 
 #
 # Delete all compiled code in preparation
 # for forcing complete rebuild#
 
 clean:
-	 rm -f nastyfiletest sha1test makedatafile fileserver fileclient *.o 
-
-
+	 rm -f fileserver fileclient *.o GRADELOG.file* fileclientdebug.txt fileserverdebug.txt
